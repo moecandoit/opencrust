@@ -1,6 +1,10 @@
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use opencrust_common::Result;
 use serde::{Deserialize, Serialize};
+
+pub mod anthropic;
+pub use anthropic::AnthropicProvider;
 
 /// Trait for LLM provider integrations (Anthropic, OpenAI, Ollama, etc.).
 #[async_trait]
@@ -10,6 +14,12 @@ pub trait LlmProvider: Send + Sync {
 
     /// Send a completion request and return the response.
     async fn complete(&self, request: &LlmRequest) -> Result<LlmResponse>;
+
+    /// Stream a completion response.
+    async fn stream(
+        &self,
+        request: &LlmRequest,
+    ) -> Result<BoxStream<'static, Result<LlmStreamResponse>>>;
 
     /// Check if the provider is available and configured.
     async fn health_check(&self) -> Result<bool>;
@@ -73,6 +83,38 @@ pub struct LlmResponse {
     pub model: String,
     pub usage: Option<Usage>,
     pub stop_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LlmStreamResponse {
+    MessageStart {
+        usage: Option<Usage>,
+    },
+    ContentBlockStart {
+        index: u32,
+        content_block: ContentBlock,
+    },
+    ContentBlockDelta {
+        index: u32,
+        delta: ContentBlockDelta,
+    },
+    ContentBlockStop {
+        index: u32,
+    },
+    MessageStop {
+        stop_reason: Option<String>,
+        usage: Option<Usage>,
+    },
+    Ping,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ContentBlockDelta {
+    #[serde(rename = "text_delta")]
+    Text { text: String },
+    #[serde(rename = "input_json_delta")]
+    ToolUse { partial_json: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
