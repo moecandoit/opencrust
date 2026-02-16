@@ -1,3 +1,4 @@
+use futures::future::join_all;
 use opencrust_common::Result;
 use tracing::info;
 
@@ -40,12 +41,13 @@ impl AgentRuntime {
     }
 
     pub async fn health_check_all(&self) -> Result<Vec<(String, bool)>> {
-        let mut results = Vec::new();
-        for provider in &self.providers {
+        let checks = self.providers.iter().map(|provider| async {
+            let provider_id = provider.provider_id().to_string();
             let ok = provider.health_check().await.unwrap_or(false);
-            results.push((provider.provider_id().to_string(), ok));
-        }
-        Ok(results)
+            (provider_id, ok)
+        });
+
+        Ok(join_all(checks).await)
     }
 }
 

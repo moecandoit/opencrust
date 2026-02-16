@@ -32,3 +32,22 @@ impl ToolOutput {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ToolOutput;
+
+    #[test]
+    fn success_helper_sets_non_error_state() {
+        let output = ToolOutput::success("done");
+        assert_eq!(output.content, "done");
+        assert!(!output.is_error);
+    }
+
+    #[test]
+    fn error_helper_sets_error_state() {
+        let output = ToolOutput::error("failed");
+        assert_eq!(output.content, "failed");
+        assert!(output.is_error);
+    }
+}
