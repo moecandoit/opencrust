@@ -38,7 +38,14 @@ async fn auth_middleware(
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
 
-    let authorized = if let Some(api_key) = &state.config.gateway.api_key {
+    let api_key = state
+        .config
+        .gateway
+        .api_key
+        .as_ref()
+        .filter(|k| !k.trim().is_empty());
+
+    let authorized = if let Some(api_key) = api_key {
         match auth_header {
             Some(h) if h == api_key => true,
             Some(h) if h.strip_prefix("Bearer ") == Some(api_key) => true,
