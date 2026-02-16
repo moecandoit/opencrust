@@ -1,8 +1,30 @@
-# OpenCrust
+<p align="center">
+  <img src="assets/logo.png" alt="OpenCrust" width="280" />
+</p>
 
-A personal AI assistant platform, rewritten in Rust from [OpenClaw](https://github.com/openclaw/openclaw).
+<h1 align="center">OpenCrust</h1>
 
-OpenCrust aims to be a high-performance, low-resource, single-binary alternative to OpenClaw. It keeps the same multi-channel, multi-LLM architecture while gaining the safety, speed, and deployment simplicity that Rust provides.
+<p align="center">
+  <strong>A personal AI assistant platform, rewritten in Rust.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/moecandoit/opencrust/actions"><img src="https://github.com/moecandoit/opencrust/workflows/CI/badge.svg" alt="CI"></a>
+  <a href="https://github.com/moecandoit/opencrust/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://github.com/moecandoit/opencrust/issues"><img src="https://img.shields.io/github/issues/moecandoit/opencrust" alt="Issues"></a>
+  <a href="https://github.com/moecandoit/opencrust/issues?q=label%3Agood-first-issue+is%3Aopen"><img src="https://img.shields.io/github/issues/moecandoit/opencrust/good-first-issue?color=7057ff&label=good%20first%20issues" alt="Good First Issues"></a>
+</p>
+
+<p align="center">
+  <a href="#getting-started">Getting Started</a> &middot;
+  <a href="#architecture">Architecture</a> &middot;
+  <a href="#contributing">Contributing</a> &middot;
+  <a href="https://github.com/moecandoit/opencrust/issues">Roadmap</a>
+</p>
+
+---
+
+Rewritten from [OpenClaw](https://github.com/openclaw/openclaw). High-performance, low-resource, single-binary. Same multi-channel, multi-LLM architecture with the safety, speed, and deployment simplicity that Rust provides.
 
 ## Why Rust?
 
