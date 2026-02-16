@@ -118,10 +118,8 @@ impl AnthropicProvider {
                 "role": match msg.role {
                     ChatRole::User => "user",
                     ChatRole::Assistant => "assistant",
-                    ChatRole::Tool => "user", // Anthropic expects tool_result in user role or separate?
-                    // Anthropic uses 'user' role for tool_result blocks usually.
-                    // Wait, tool_result blocks are inside 'user' message content.
-                    _ => "user",
+                    ChatRole::Tool => "user", // Anthropic expects tool_result in user role
+                    ChatRole::System => return Err(Error::Agent("System messages should be passed via the `system` field, not in `messages`".to_string())),
                 },
                 "content": content
             }));

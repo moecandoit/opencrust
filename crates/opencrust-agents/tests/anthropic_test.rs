@@ -154,6 +154,36 @@ async fn test_anthropic_complete() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_anthropic_system_message_error() -> Result<()> {
+    let (addr, _shutdown_tx) = start_mock_server().await;
+    let base_url = format!("http://{}/v1/messages", addr);
+
+    let provider = AnthropicProvider::new("test-key".to_string()).with_base_url(base_url);
+
+    let request = LlmRequest {
+        model: "claude-3-opus-20240229".to_string(),
+        messages: vec![ChatMessage {
+            role: ChatRole::System,
+            content: MessagePart::Text("You are a helpful assistant.".to_string()),
+        }],
+        system: None,
+        max_tokens: Some(100),
+        temperature: None,
+        tools: vec![],
+    };
+
+    let result = provider.complete(&request).await;
+    assert!(result.is_err());
+    if let Err(opencrust_common::Error::Agent(msg)) = result {
+        assert_eq!(msg, "System messages should be passed via the `system` field, not in `messages`");
+    } else {
+        panic!("Expected Agent error");
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_anthropic_stream() -> Result<()> {
     let (addr, _shutdown_tx) = start_mock_server().await;
     let base_url = format!("http://{}/v1/messages", addr);
