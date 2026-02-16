@@ -91,22 +91,25 @@ async fn main() -> Result<()> {
         Commands::Status => {
             println!("OpenCrust status: checking gateway...");
             let client = reqwest::Client::new();
-            match client
-                .get(format!(
-                    "http://{}:{}/api/status",
-                    config.gateway.host, config.gateway.port
-                ))
-                .send()
-                .await
-            {
-                Ok(resp) => {
-                    let body = resp.json::<serde_json::Value>().await?;
-                    println!("{}", serde_json::to_string_pretty(&body)?);
-                }
-                Err(_) => {
-                    println!("Gateway is not running.");
-                }
+            let mut request = client.get(format!(
+                "http://{}:{}/api/status",
+                config.gateway.host, config.gateway.port
+            ));
+
+            if let Some(api_key) = &config.gateway.api_key {
+                request = request.header("Authorization", api_key);
             }
+
+            let resp = request.send().await.map_err(|_| {
+                anyhow::anyhow!("Gateway is not running at {}:{}", config.gateway.host, config.gateway.port)
+            })?;
+
+            if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+                anyhow::bail!("Unauthorized. Please check your api_key in config.yml.");
+            }
+
+            let body = resp.json::<serde_json::Value>().await?;
+            println!("{}", serde_json::to_string_pretty(&body)?);
         }
         Commands::Init => {
             println!("OpenCrust setup wizard");
