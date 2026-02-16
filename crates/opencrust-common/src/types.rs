@@ -18,7 +18,7 @@ macro_rules! impl_id_type {
                 Self(Uuid::new_v4().to_string())
             }
 
-            pub fn from_str(s: impl Into<String>) -> Self {
+            pub fn from_string(s: impl Into<String>) -> Self {
                 Self(s.into())
             }
 
