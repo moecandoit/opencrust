@@ -71,3 +71,44 @@ impl Message {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ChannelId, SessionId, UserId};
+
+    #[test]
+    fn test_message_text_factory() {
+        let session_id = SessionId::new();
+        let channel_id = ChannelId::new();
+        let user_id = UserId::new();
+        let direction = MessageDirection::Incoming;
+        let text = "Hello, world!";
+
+        let start_time = Utc::now();
+        let message = Message::text(
+            session_id.clone(),
+            channel_id.clone(),
+            user_id.clone(),
+            direction.clone(),
+            text,
+        );
+        let end_time = Utc::now();
+
+        assert!(!message.id.is_empty());
+        assert_eq!(message.session_id, session_id);
+        assert_eq!(message.channel_id, channel_id);
+        assert_eq!(message.user_id, user_id);
+        assert!(matches!(message.direction, MessageDirection::Incoming));
+
+        if let MessageContent::Text(content_text) = message.content {
+            assert_eq!(content_text, text);
+        } else {
+            panic!("Expected MessageContent::Text");
+        }
+
+        assert!(message.timestamp >= start_time);
+        assert!(message.timestamp <= end_time);
+        assert!(message.metadata.is_null());
+    }
+}
