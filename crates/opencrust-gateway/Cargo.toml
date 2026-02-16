@@ -24,3 +24,7 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }
+
+[dev-dependencies]
+tokio-tungstenite = "0.28"
+tungstenite = "0.28"

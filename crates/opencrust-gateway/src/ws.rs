@@ -7,12 +7,16 @@ use tracing::{info, warn};
 
 use crate::state::SharedState;
 
+const MAX_MESSAGE_SIZE: usize = 1024 * 1024; // 1MB
+
 /// WebSocket upgrade handler.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    ws.max_message_size(MAX_MESSAGE_SIZE)
+        .max_frame_size(MAX_MESSAGE_SIZE)
+        .on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(socket: WebSocket, state: SharedState) {
@@ -38,6 +42,15 @@ async fn handle_socket(socket: WebSocket, state: SharedState) {
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
+                if text.len() > MAX_MESSAGE_SIZE {
+                    warn!(
+                        "message too large: session={}, len={}, max={}",
+                        session_id,
+                        text.len(),
+                        MAX_MESSAGE_SIZE
+                    );
+                    break;
+                }
                 info!(
                     "received message: session={}, len={}",
                     session_id,
