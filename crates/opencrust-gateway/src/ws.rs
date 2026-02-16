@@ -7,12 +7,18 @@ use tracing::{info, warn};
 
 use crate::state::SharedState;
 
+const MAX_WS_FRAME_BYTES: usize = 64 * 1024;
+const MAX_WS_MESSAGE_BYTES: usize = 256 * 1024;
+const MAX_WS_TEXT_BYTES: usize = 32 * 1024;
+
 /// WebSocket upgrade handler.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<SharedState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+    ws.max_frame_size(MAX_WS_FRAME_BYTES)
+        .max_message_size(MAX_WS_MESSAGE_BYTES)
+        .on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 async fn handle_socket(socket: WebSocket, state: SharedState) {
@@ -38,11 +44,21 @@ async fn handle_socket(socket: WebSocket, state: SharedState) {
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
-                info!(
-                    "received message: session={}, len={}",
-                    session_id,
-                    text.len()
-                );
+                let text_len = text.len();
+                info!("received message: session={}, len={}", session_id, text_len);
+                if text_message_too_large(text_len) {
+                    warn!(
+                        "dropping oversized ws text message: session={}, len={}, limit={}",
+                        session_id, text_len, MAX_WS_TEXT_BYTES
+                    );
+                    let err = serde_json::json!({
+                        "type": "error",
+                        "code": "message_too_large",
+                        "max_bytes": MAX_WS_TEXT_BYTES,
+                    });
+                    let _ = sender.send(Message::Text(err.to_string().into())).await;
+                    break;
+                }
                 // TODO: Route to agent runtime
                 let echo = serde_json::json!({
                     "type": "message",
@@ -71,4 +87,19 @@ async fn handle_socket(socket: WebSocket, state: SharedState) {
 
     state.sessions.remove(&session_id);
     info!("session cleaned up: {}", session_id);
+}
+
+fn text_message_too_large(len: usize) -> bool {
+    len > MAX_WS_TEXT_BYTES
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_WS_TEXT_BYTES, text_message_too_large};
+
+    #[test]
+    fn text_message_size_guard_uses_strict_upper_bound() {
+        assert!(!text_message_too_large(MAX_WS_TEXT_BYTES));
+        assert!(text_message_too_large(MAX_WS_TEXT_BYTES + 1));
+    }
 }

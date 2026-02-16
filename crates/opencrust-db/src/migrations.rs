@@ -7,9 +7,3 @@ pub struct Migration {
     pub name: &'static str,
     pub sql: &'static str,
 }
-
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "initial_schema",
-    sql: "-- Applied inline in session_store and vector_store",
-}];
