@@ -4,6 +4,8 @@ use dashmap::DashMap;
 use opencrust_agents::{AgentRuntime, ChatMessage};
 use opencrust_channels::ChannelRegistry;
 use opencrust_config::AppConfig;
+use opencrust_db::SessionStore;
+use tracing::warn;
 use uuid::Uuid;
 
 /// Shared application state accessible from all request handlers.
@@ -12,6 +14,7 @@ pub struct AppState {
     pub channels: ChannelRegistry,
     pub agents: AgentRuntime,
     pub sessions: DashMap<String, SessionState>,
+    pub session_store: Option<Arc<SessionStore>>,
 }
 
 /// Per-connection session tracking.
@@ -23,12 +26,13 @@ pub struct SessionState {
 }
 
 impl AppState {
-    pub fn new(config: AppConfig) -> Self {
+    pub fn new(config: AppConfig, session_store: Option<Arc<SessionStore>>) -> Self {
         Self {
             config,
             channels: ChannelRegistry::new(),
             agents: AgentRuntime::new(),
             sessions: DashMap::new(),
+            session_store,
         }
     }
 
@@ -43,6 +47,14 @@ impl AppState {
                 history: Vec::new(),
             },
         );
+
+        // Persist to SQLite (best-effort)
+        if let Some(store) = &self.session_store
+            && let Err(e) = store.create_session(&id, None, None)
+        {
+            warn!("failed to persist session to db: {}", e);
+        }
+
         id
     }
 }

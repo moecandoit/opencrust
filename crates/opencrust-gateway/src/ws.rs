@@ -81,12 +81,24 @@ async fn handle_socket(socket: WebSocket, state: SharedState) {
                         if let Some(mut session) = state.sessions.get_mut(&session_id) {
                             session.history.push(ChatMessage {
                                 role: ChatRole::User,
-                                content: MessagePart::Text(user_text),
+                                content: MessagePart::Text(user_text.clone()),
                             });
                             session.history.push(ChatMessage {
                                 role: ChatRole::Assistant,
                                 content: MessagePart::Text(response_text.clone()),
                             });
+                        }
+
+                        // Persist to SQLite (best-effort)
+                        if let Some(store) = &state.session_store {
+                            if let Err(e) = store.append_message(&session_id, "user", &user_text) {
+                                warn!("failed to persist user message: {}", e);
+                            }
+                            if let Err(e) =
+                                store.append_message(&session_id, "assistant", &response_text)
+                            {
+                                warn!("failed to persist assistant message: {}", e);
+                            }
                         }
 
                         serde_json::json!({
