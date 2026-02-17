@@ -57,8 +57,16 @@ async fn test_health_check_performance() {
     // It should take roughly the delay time, not sequential sum
     // We add a buffer for overhead (e.g., 2x delay is generous enough)
     let max_expected_duration = delay * 2;
-    assert!(elapsed < max_expected_duration, "Execution was slower than expected for concurrent processing. Elapsed: {:?}, Expected less than: {:?}", elapsed, max_expected_duration);
+    assert!(
+        elapsed < max_expected_duration,
+        "Execution was slower than expected for concurrent processing. Elapsed: {:?}, Expected less than: {:?}",
+        elapsed,
+        max_expected_duration
+    );
 
     // Also ensure it took at least the delay
-    assert!(elapsed >= delay, "Execution was faster than the delay itself!");
+    assert!(
+        elapsed >= delay,
+        "Execution was faster than the delay itself!"
+    );
 }

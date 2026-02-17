@@ -3,7 +3,7 @@ use super::{
     LlmStreamResponse, MessagePart, Usage,
 };
 use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use bytes::Bytes;
 use futures::stream::{self, BoxStream, StreamExt};
 use opencrust_common::{Error, Result};
@@ -67,21 +67,32 @@ impl AnthropicProvider {
                                     let media_type = meta
                                         .split(';')
                                         .next()
-                                        .ok_or_else(|| Error::Agent("Invalid data URL".to_string()))?
+                                        .ok_or_else(|| {
+                                            Error::Agent("Invalid data URL".to_string())
+                                        })?
                                         .trim_start_matches("data:");
                                     (media_type.to_string(), data.to_string())
                                 } else if url.starts_with("http") {
-                                    let response = self.client.get(url).send().await.map_err(|e: reqwest::Error| Error::Agent(format!("Network error: {}", e)))?;
+                                    let response = self.client.get(url).send().await.map_err(
+                                        |e: reqwest::Error| {
+                                            Error::Agent(format!("Network error: {}", e))
+                                        },
+                                    )?;
                                     let media_type = response
                                         .headers()
                                         .get(reqwest::header::CONTENT_TYPE)
                                         .and_then(|v| v.to_str().ok())
                                         .map(|s| s.to_string())
                                         .unwrap_or_else(|| "image/jpeg".to_string());
-                                    let bytes = response.bytes().await.map_err(|e: reqwest::Error| Error::Agent(format!("Network error: {}", e)))?;
+                                    let bytes =
+                                        response.bytes().await.map_err(|e: reqwest::Error| {
+                                            Error::Agent(format!("Network error: {}", e))
+                                        })?;
                                     (media_type, BASE64.encode(bytes))
                                 } else {
-                                    return Err(Error::Agent("Unsupported image URL scheme".to_string()));
+                                    return Err(Error::Agent(
+                                        "Unsupported image URL scheme".to_string(),
+                                    ));
                                 };
 
                                 processed_parts.push(json!({
@@ -101,7 +112,10 @@ impl AnthropicProvider {
                                     "input": input
                                 }));
                             }
-                            ContentBlock::ToolResult { tool_use_id, content } => {
+                            ContentBlock::ToolResult {
+                                tool_use_id,
+                                content,
+                            } => {
                                 processed_parts.push(json!({
                                     "type": "tool_result",
                                     "tool_use_id": tool_use_id,
@@ -127,8 +141,12 @@ impl AnthropicProvider {
         Ok(processed_messages)
     }
 
-    async fn create_request_body(&self, request: &LlmRequest, stream: bool) -> Result<serde_json::Value> {
-         let messages = self.process_messages(&request.messages).await?;
+    async fn create_request_body(
+        &self,
+        request: &LlmRequest,
+        stream: bool,
+    ) -> Result<serde_json::Value> {
+        let messages = self.process_messages(&request.messages).await?;
 
         let mut body = json!({
             "model": request.model,
@@ -146,11 +164,17 @@ impl AnthropicProvider {
         }
 
         if !request.tools.is_empty() {
-             body["tools"] = json!(request.tools.iter().map(|t| json!({
-                "name": t.name,
-                "description": t.description,
-                "input_schema": t.input_schema
-            })).collect::<Vec<_>>());
+            body["tools"] = json!(
+                request
+                    .tools
+                    .iter()
+                    .map(|t| json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": t.input_schema
+                    }))
+                    .collect::<Vec<_>>()
+            );
         }
 
         Ok(body)
@@ -166,7 +190,8 @@ impl LlmProvider for AnthropicProvider {
     async fn complete(&self, request: &LlmRequest) -> Result<LlmResponse> {
         let body = self.create_request_body(request, false).await?;
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -181,9 +206,13 @@ impl LlmProvider for AnthropicProvider {
             return Err(Error::Agent(format!("Anthropic API error: {}", error_text)));
         }
 
-        let raw_response: serde_json::Value = response.json().await.map_err(|e: reqwest::Error| Error::Serialization(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::Other, e))))?;
+        let raw_response: serde_json::Value =
+            response.json().await.map_err(|e: reqwest::Error| {
+                Error::Serialization(serde_json::Error::io(std::io::Error::other(e)))
+            })?;
 
-        let content_blocks = raw_response["content"].as_array()
+        let content_blocks = raw_response["content"]
+            .as_array()
             .ok_or_else(|| Error::Agent("Missing content".to_string()))?
             .iter()
             .map(|block| {
@@ -197,7 +226,10 @@ impl LlmProvider for AnthropicProvider {
                         name: block["name"].as_str().unwrap_or_default().to_string(),
                         input: block["input"].clone(),
                     }),
-                    _ => Err(Error::Agent(format!("Unknown content block type: {}", type_))),
+                    _ => Err(Error::Agent(format!(
+                        "Unknown content block type: {}",
+                        type_
+                    ))),
                 }
             })
             .collect::<Result<Vec<_>>>()?;
@@ -209,9 +241,14 @@ impl LlmProvider for AnthropicProvider {
 
         Ok(LlmResponse {
             content: content_blocks,
-            model: raw_response["model"].as_str().unwrap_or_default().to_string(),
+            model: raw_response["model"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             usage,
-            stop_reason: raw_response["stop_reason"].as_str().map(|s: &str| s.to_string()),
+            stop_reason: raw_response["stop_reason"]
+                .as_str()
+                .map(|s: &str| s.to_string()),
         })
     }
 
@@ -221,7 +258,8 @@ impl LlmProvider for AnthropicProvider {
     ) -> Result<BoxStream<'static, Result<LlmStreamResponse>>> {
         let body = self.create_request_body(request, true).await?;
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -232,52 +270,49 @@ impl LlmProvider for AnthropicProvider {
             .map_err(|e: reqwest::Error| Error::Agent(format!("Network error: {}", e)))?;
 
         if !response.status().is_success() {
-             let error_text = response.text().await.unwrap_or_default();
+            let error_text = response.text().await.unwrap_or_default();
             return Err(Error::Agent(format!("Anthropic API error: {}", error_text)));
         }
 
         let stream = response.bytes_stream().boxed();
         let buffer = Vec::new();
 
-        let s = stream::try_unfold((stream, buffer), |(mut stream, mut buffer): (BoxStream<'static, reqwest::Result<Bytes>>, Vec<u8>)| async move {
-            loop {
-                 if let Some(i) = buffer.iter().position(|&b| b == b'\n') {
-                     let line_bytes: Vec<u8> = buffer.drain(0..=i).collect();
-                     let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
+        let s = stream::try_unfold(
+            (stream, buffer),
+            |(mut stream, mut buffer): (BoxStream<'static, reqwest::Result<Bytes>>, Vec<u8>)| async move {
+                loop {
+                    if let Some(i) = buffer.iter().position(|&b| b == b'\n') {
+                        let line_bytes: Vec<u8> = buffer.drain(0..=i).collect();
+                        let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
 
-                     if line.starts_with("data: ") {
-                         let data = &line[6..];
-                         if data == "[DONE]" {
-                             // End of stream?
-                         } else {
-                             match serde_json::from_str::<serde_json::Value>(data) {
-                                 Ok(json) => {
-                                     if let Some(event) = parse_anthropic_event(&json) {
-                                         return Ok(Some((event, (stream, buffer))));
-                                     }
-                                 }
-                                 Err(_) => {} // skip invalid json
-                             }
-                         }
-                     }
-                     // If line doesn't start with data:, just skip and continue to next line
-                     continue;
-                 }
+                        if let Some(data) = line.strip_prefix("data: ") {
+                            if data == "[DONE]" {
+                                // End of stream?
+                            } else if let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
+                                && let Some(event) = parse_anthropic_event(&json)
+                            {
+                                return Ok(Some((event, (stream, buffer))));
+                            } // skip invalid json
+                        }
+                        // If line doesn't start with data:, just skip and continue to next line
+                        continue;
+                    }
 
-                 match stream.next().await {
-                     Some(Ok(chunk)) => {
-                         buffer.extend_from_slice(&chunk);
-                     }
-                     Some(Err(e)) => return Err(Error::Agent(format!("Network error: {}", e))),
-                     None => {
-                         if !buffer.is_empty() {
-                             // Process remaining if needed?
-                         }
-                         return Ok(None);
-                     }
-                 }
-            }
-        });
+                    match stream.next().await {
+                        Some(Ok(chunk)) => {
+                            buffer.extend_from_slice(&chunk);
+                        }
+                        Some(Err(e)) => return Err(Error::Agent(format!("Network error: {}", e))),
+                        None => {
+                            if !buffer.is_empty() {
+                                // Process remaining if needed?
+                            }
+                            return Ok(None);
+                        }
+                    }
+                }
+            },
+        );
 
         Ok(Box::pin(s))
     }
@@ -289,7 +324,8 @@ impl LlmProvider for AnthropicProvider {
             "messages": [{"role": "user", "content": "ping"}]
         });
 
-        let response = self.client
+        let response = self
+            .client
             .post(&self.base_url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -314,56 +350,68 @@ fn parse_anthropic_event(json: &serde_json::Value) -> Option<LlmStreamResponse> 
                 output_tokens: u["output_tokens"].as_u64().unwrap_or(0) as u32,
             });
             Some(LlmStreamResponse::MessageStart { usage })
-        },
+        }
         "content_block_start" => {
             let index = json["index"].as_u64().unwrap_or(0) as u32;
             let block = &json["content_block"];
             let type_ = block["type"].as_str().unwrap_or_default();
             if type_ == "text" {
-                 Some(LlmStreamResponse::ContentBlockStart {
-                     index,
-                     content_block: ContentBlock::Text { text: block["text"].as_str().unwrap_or_default().to_string() }
-                 })
+                Some(LlmStreamResponse::ContentBlockStart {
+                    index,
+                    content_block: ContentBlock::Text {
+                        text: block["text"].as_str().unwrap_or_default().to_string(),
+                    },
+                })
             } else if type_ == "tool_use" {
                 Some(LlmStreamResponse::ContentBlockStart {
-                     index,
-                     content_block: ContentBlock::ToolUse {
+                    index,
+                    content_block: ContentBlock::ToolUse {
                         id: block["id"].as_str().unwrap_or_default().to_string(),
                         name: block["name"].as_str().unwrap_or_default().to_string(),
                         input: json!({}),
-                    }
-                 })
+                    },
+                })
             } else {
                 None
             }
-        },
+        }
         "content_block_delta" => {
             let index = json["index"].as_u64().unwrap_or(0) as u32;
             let delta = &json["delta"];
             let type_ = delta["type"].as_str().unwrap_or_default();
             if type_ == "text_delta" {
-                 Some(LlmStreamResponse::ContentBlockDelta {
-                     index,
-                     delta: ContentBlockDelta::Text { text: delta["text"].as_str().unwrap_or_default().to_string() }
-                 })
+                Some(LlmStreamResponse::ContentBlockDelta {
+                    index,
+                    delta: ContentBlockDelta::Text {
+                        text: delta["text"].as_str().unwrap_or_default().to_string(),
+                    },
+                })
             } else if type_ == "input_json_delta" {
-                 Some(LlmStreamResponse::ContentBlockDelta {
-                     index,
-                     delta: ContentBlockDelta::ToolUse { partial_json: delta["partial_json"].as_str().unwrap_or_default().to_string() }
-                 })
+                Some(LlmStreamResponse::ContentBlockDelta {
+                    index,
+                    delta: ContentBlockDelta::ToolUse {
+                        partial_json: delta["partial_json"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .to_string(),
+                    },
+                })
             } else {
                 None
             }
-        },
+        }
         "content_block_stop" => {
             let index = json["index"].as_u64().unwrap_or(0) as u32;
             Some(LlmStreamResponse::ContentBlockStop { index })
-        },
+        }
         "message_delta" => {
             let stop_reason = json["delta"]["stop_reason"].as_str().map(|s| s.to_string());
-            let usage = json["usage"]["output_tokens"].as_u64().map(|tokens| Usage { input_tokens: 0, output_tokens: tokens as u32 });
+            let usage = json["usage"]["output_tokens"].as_u64().map(|tokens| Usage {
+                input_tokens: 0,
+                output_tokens: tokens as u32,
+            });
             Some(LlmStreamResponse::MessageStop { stop_reason, usage })
-        },
+        }
         "ping" => Some(LlmStreamResponse::Ping),
         _ => None,
     }
