@@ -16,3 +16,4 @@ tokio = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
+sqlite-vec = { workspace = true }

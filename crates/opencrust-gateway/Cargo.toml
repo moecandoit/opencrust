@@ -25,3 +25,11 @@ uuid = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }
 dirs = "6"
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio-tungstenite = "0.26"
+tokio = { workspace = true }
+futures = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }

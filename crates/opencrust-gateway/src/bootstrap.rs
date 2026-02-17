@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use opencrust_agents::{
@@ -8,6 +9,35 @@ use opencrust_config::AppConfig;
 use opencrust_db::MemoryStore;
 use tracing::{info, warn};
 
+/// Default vault path under the user's home directory.
+fn default_vault_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".opencrust").join("credentials").join("vault.json"))
+}
+
+/// Resolve an API key using the priority chain: vault -> config -> env var.
+fn resolve_api_key(
+    config_key: Option<&str>,
+    vault_credential_key: &str,
+    env_var: &str,
+) -> Option<String> {
+    // 1. Try credential vault (only works when OPENCRUST_VAULT_PASSPHRASE is set)
+    if let Some(vault_path) = default_vault_path()
+        && let Some(val) = opencrust_security::try_vault_get(&vault_path, vault_credential_key)
+    {
+        return Some(val);
+    }
+
+    // 2. Config file value
+    if let Some(key) = config_key
+        && !key.is_empty()
+    {
+        return Some(key.to_string());
+    }
+
+    // 3. Environment variable
+    std::env::var(env_var).ok()
+}
+
 /// Build a fully-configured `AgentRuntime` from the application config.
 pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
     let mut runtime = AgentRuntime::new();
@@ -16,10 +46,11 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
     for (name, llm_config) in &config.llm {
         match llm_config.provider.as_str() {
             "anthropic" => {
-                let api_key = llm_config
-                    .api_key
-                    .clone()
-                    .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok());
+                let api_key = resolve_api_key(
+                    llm_config.api_key.as_deref(),
+                    "ANTHROPIC_API_KEY",
+                    "ANTHROPIC_API_KEY",
+                );
 
                 if let Some(key) = api_key {
                     let provider = AnthropicProvider::new(
@@ -30,14 +61,17 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                     runtime.register_provider(Box::new(provider));
                     info!("configured anthropic provider: {name}");
                 } else {
-                    warn!("skipping anthropic provider {name}: no API key (set api_key in config or ANTHROPIC_API_KEY env var)");
+                    warn!(
+                        "skipping anthropic provider {name}: no API key (set api_key in config or ANTHROPIC_API_KEY env var)"
+                    );
                 }
             }
             "openai" => {
-                let api_key = llm_config
-                    .api_key
-                    .clone()
-                    .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+                let api_key = resolve_api_key(
+                    llm_config.api_key.as_deref(),
+                    "OPENAI_API_KEY",
+                    "OPENAI_API_KEY",
+                );
 
                 if let Some(key) = api_key {
                     let provider = OpenAiProvider::new(
@@ -48,7 +82,9 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                     runtime.register_provider(Box::new(provider));
                     info!("configured openai provider: {name}");
                 } else {
-                    warn!("skipping openai provider {name}: no API key (set api_key in config or OPENAI_API_KEY env var)");
+                    warn!(
+                        "skipping openai provider {name}: no API key (set api_key in config or OPENAI_API_KEY env var)"
+                    );
                 }
             }
             other => {
@@ -68,9 +104,7 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
         let data_dir = config
             .data_dir
             .clone()
-            .or_else(|| {
-                dirs::home_dir().map(|h| h.join(".opencrust").join("data"))
-            })
+            .or_else(|| dirs::home_dir().map(|h| h.join(".opencrust").join("data")))
             .unwrap_or_else(|| std::path::PathBuf::from(".opencrust/data"));
 
         if let Err(e) = std::fs::create_dir_all(&data_dir) {
@@ -90,10 +124,11 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                 {
                     match embed_config.provider.as_str() {
                         "cohere" => {
-                            let api_key = embed_config
-                                .api_key
-                                .clone()
-                                .or_else(|| std::env::var("COHERE_API_KEY").ok());
+                            let api_key = resolve_api_key(
+                                embed_config.api_key.as_deref(),
+                                "COHERE_API_KEY",
+                                "COHERE_API_KEY",
+                            );
 
                             if let Some(key) = api_key {
                                 let provider = CohereEmbeddingProvider::new(

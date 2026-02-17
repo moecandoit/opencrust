@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument};
 
 use crate::providers::{
-    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart,
-    Usage,
+    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart, Usage,
 };
 
 const DEFAULT_MODEL: &str = "claude-sonnet-4-5-20250929";
@@ -432,11 +431,8 @@ mod tests {
 
     #[test]
     fn endpoint_strips_trailing_slash() {
-        let provider = AnthropicProvider::new(
-            "key",
-            None,
-            Some("https://api.example.com/".to_string()),
-        );
+        let provider =
+            AnthropicProvider::new("key", None, Some("https://api.example.com/".to_string()));
         assert_eq!(provider.endpoint(), "https://api.example.com/v1/messages");
     }
 

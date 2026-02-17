@@ -1,4 +1,8 @@
-use anyhow::Result;
+mod wizard;
+
+use std::path::PathBuf;
+
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
@@ -28,7 +32,14 @@ enum Commands {
         /// Port to listen on
         #[arg(long, default_value = "3000")]
         port: u16,
+
+        /// Run as a background daemon
+        #[arg(long, short = 'd')]
+        daemon: bool,
     },
+
+    /// Stop the running daemon
+    Stop,
 
     /// Show current status
     Status,
@@ -65,31 +76,97 @@ enum PluginCommands {
     Install { path: String },
 }
 
+fn opencrust_dir() -> PathBuf {
+    dirs::home_dir()
+        .map(|h| h.join(".opencrust"))
+        .unwrap_or_else(|| PathBuf::from(".opencrust"))
+}
+
+fn pid_file_path() -> PathBuf {
+    opencrust_dir().join("opencrust.pid")
+}
+
+fn log_file_path() -> PathBuf {
+    opencrust_dir().join("opencrust.log")
+}
+
+/// Read the PID from the PID file.
+fn read_pid() -> Option<u32> {
+    let path = pid_file_path();
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+/// Check if a process with the given PID is running.
+#[cfg(unix)]
+fn is_process_running(pid: u32) -> bool {
+    // Signal 0 checks existence without sending a signal
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+#[cfg(not(unix))]
+fn is_process_running(_pid: u32) -> bool {
+    false
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&cli.log_level)),
-        )
-        .init();
+    // Init tracing for non-daemon mode (daemon reconfigures after fork)
+    let init_tracing = |level: &str| {
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level)),
+            )
+            .init();
+    };
 
     let config_loader = opencrust_config::ConfigLoader::new()?;
     config_loader.ensure_dirs()?;
     let config = config_loader.load()?;
 
     match cli.command {
-        Commands::Start { host, port } => {
+        Commands::Start { host, port, daemon } => {
             let mut config = config;
             config.gateway.host = host;
             config.gateway.port = port;
 
-            let server = opencrust_gateway::GatewayServer::new(config);
-            server.run().await?;
+            if daemon {
+                start_daemon(config)?;
+            } else {
+                init_tracing(&cli.log_level);
+                let server = opencrust_gateway::GatewayServer::new(config);
+                server.run().await?;
+            }
+        }
+        Commands::Stop => {
+            init_tracing(&cli.log_level);
+            stop_daemon()?;
         }
         Commands::Status => {
-            println!("OpenCrust status: checking gateway...");
+            init_tracing(&cli.log_level);
+
+            // Check PID file first
+            if let Some(pid) = read_pid() {
+                if is_process_running(pid) {
+                    println!("OpenCrust daemon is running (PID {})", pid);
+                } else {
+                    println!(
+                        "OpenCrust daemon is not running (stale PID file for PID {})",
+                        pid
+                    );
+                    // Clean up stale PID file
+                    let _ = std::fs::remove_file(pid_file_path());
+                }
+            } else {
+                println!("No daemon PID file found.");
+            }
+
+            // Also try the HTTP status endpoint
+            println!();
+            println!("Gateway status:");
             let client = reqwest::Client::new();
             match client
                 .get(format!(
@@ -104,65 +181,167 @@ async fn main() -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&body)?);
                 }
                 Err(_) => {
-                    println!("Gateway is not running.");
+                    println!("Gateway is not responding.");
                 }
             }
         }
         Commands::Init => {
-            println!("OpenCrust setup wizard");
-            println!("Config directory: {}", config_loader.config_dir().display());
-            println!("Directories created. Edit config.yml to get started.");
+            init_tracing(&cli.log_level);
+            wizard::run_wizard(config_loader.config_dir())?;
         }
-        Commands::Channel { action } => match action {
-            ChannelCommands::List => {
-                println!("Configured channels:");
-                if config.channels.is_empty() {
-                    println!("  (none - add channels to config.yml)");
-                }
-                for (name, ch) in &config.channels {
-                    let enabled = ch.enabled.unwrap_or(true);
-                    let status = if enabled { "enabled" } else { "disabled" };
-                    println!("  {} [{}] - {}", name, ch.channel_type, status);
-                }
-            }
-            ChannelCommands::Status { name } => match config.channels.get(&name) {
-                Some(ch) => println!(
-                    "{}: type={}, enabled={}",
-                    name,
-                    ch.channel_type,
-                    ch.enabled.unwrap_or(true)
-                ),
-                None => println!("channel '{}' not found in config", name),
-            },
-        },
-        Commands::Plugin { action } => match action {
-            PluginCommands::List => {
-                let loader = opencrust_plugins::PluginLoader::new(
-                    config_loader.config_dir().join("plugins"),
-                );
-                match loader.discover() {
-                    Ok(manifests) => {
-                        println!("Installed plugins:");
-                        if manifests.is_empty() {
-                            println!("  (none)");
-                        }
-                        for m in manifests {
-                            println!(
-                                "  {} v{} - {}",
-                                m.name,
-                                m.version,
-                                m.description.unwrap_or_default()
-                            );
-                        }
+        Commands::Channel { action } => {
+            init_tracing(&cli.log_level);
+            match action {
+                ChannelCommands::List => {
+                    println!("Configured channels:");
+                    if config.channels.is_empty() {
+                        println!("  (none - add channels to config.yml)");
                     }
-                    Err(e) => println!("error scanning plugins: {}", e),
+                    for (name, ch) in &config.channels {
+                        let enabled = ch.enabled.unwrap_or(true);
+                        let status = if enabled { "enabled" } else { "disabled" };
+                        println!("  {} [{}] - {}", name, ch.channel_type, status);
+                    }
+                }
+                ChannelCommands::Status { name } => match config.channels.get(&name) {
+                    Some(ch) => println!(
+                        "{}: type={}, enabled={}",
+                        name,
+                        ch.channel_type,
+                        ch.enabled.unwrap_or(true)
+                    ),
+                    None => println!("channel '{}' not found in config", name),
+                },
+            }
+        }
+        Commands::Plugin { action } => {
+            init_tracing(&cli.log_level);
+            match action {
+                PluginCommands::List => {
+                    let loader = opencrust_plugins::PluginLoader::new(
+                        config_loader.config_dir().join("plugins"),
+                    );
+                    match loader.discover() {
+                        Ok(manifests) => {
+                            println!("Installed plugins:");
+                            if manifests.is_empty() {
+                                println!("  (none)");
+                            }
+                            for m in manifests {
+                                println!(
+                                    "  {} v{} - {}",
+                                    m.name,
+                                    m.version,
+                                    m.description.unwrap_or_default()
+                                );
+                            }
+                        }
+                        Err(e) => println!("error scanning plugins: {}", e),
+                    }
+                }
+                PluginCommands::Install { path } => {
+                    println!("TODO: install plugin from {}", path);
                 }
             }
-            PluginCommands::Install { path } => {
-                println!("TODO: install plugin from {}", path);
-            }
-        },
+        }
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn start_daemon(config: opencrust_config::AppConfig) -> Result<()> {
+    use daemonize::Daemonize;
+    use std::fs::File;
+
+    let pid_path = pid_file_path();
+    let log_path = log_file_path();
+
+    let stdout = File::create(&log_path)
+        .context(format!("failed to create log file: {}", log_path.display()))?;
+    let stderr = stdout
+        .try_clone()
+        .context("failed to clone log file handle")?;
+
+    let daemonize = Daemonize::new()
+        .pid_file(&pid_path)
+        .stdout(stdout)
+        .stderr(stderr)
+        .working_directory(".");
+
+    match daemonize.start() {
+        Ok(()) => {
+            // We are now in the child (daemon) process.
+            // Re-init tracing to write to the log file.
+            tracing_subscriber::fmt()
+                .with_env_filter(EnvFilter::new(
+                    config.log_level.as_deref().unwrap_or("info"),
+                ))
+                .with_ansi(false)
+                .init();
+
+            tracing::info!("daemon started (PID file: {})", pid_path.display());
+
+            // Build a new tokio runtime in the daemon process
+            let rt = tokio::runtime::Runtime::new()
+                .context("failed to create tokio runtime in daemon")?;
+            rt.block_on(async {
+                let server = opencrust_gateway::GatewayServer::new(config);
+                if let Err(e) = server.run().await {
+                    tracing::error!("gateway error: {e}");
+                }
+            });
+
+            // Clean up PID file on exit
+            let _ = std::fs::remove_file(&pid_path);
+            Ok(())
+        }
+        Err(e) => {
+            anyhow::bail!("failed to daemonize: {e}");
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn start_daemon(_config: opencrust_config::AppConfig) -> Result<()> {
+    anyhow::bail!("daemonization is only supported on Unix systems. Run without --daemon.");
+}
+
+#[cfg(unix)]
+fn stop_daemon() -> Result<()> {
+    let pid_path = pid_file_path();
+
+    let pid = read_pid().context(format!("no PID file found at {}", pid_path.display()))?;
+
+    if !is_process_running(pid) {
+        println!("Process {} is not running (removing stale PID file)", pid);
+        std::fs::remove_file(&pid_path).ok();
+        return Ok(());
+    }
+
+    println!("Sending SIGTERM to PID {}...", pid);
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+
+    // Wait briefly for the process to exit
+    for _ in 0..20 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if !is_process_running(pid) {
+            println!("OpenCrust daemon stopped.");
+            std::fs::remove_file(&pid_path).ok();
+            return Ok(());
+        }
+    }
+
+    println!(
+        "Process {} did not exit within 5s. It may still be shutting down.",
+        pid
+    );
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn stop_daemon() -> Result<()> {
+    anyhow::bail!("daemon stop is only supported on Unix systems");
 }

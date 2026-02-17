@@ -4,8 +4,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument};
 
 use crate::providers::{
-    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart,
-    Usage,
+    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart, Usage,
 };
 
 const DEFAULT_MODEL: &str = "gpt-4o";
@@ -98,17 +97,14 @@ impl OpenAiProvider {
                     let tool_calls: Vec<OpenAiToolCall> = blocks
                         .iter()
                         .filter_map(|b| match b {
-                            ContentBlock::ToolUse { id, name, input } => {
-                                Some(OpenAiToolCall {
-                                    id: id.clone(),
-                                    r#type: "function".to_string(),
-                                    function: OpenAiFunctionCall {
-                                        name: name.clone(),
-                                        arguments: serde_json::to_string(input)
-                                            .unwrap_or_default(),
-                                    },
-                                })
-                            }
+                            ContentBlock::ToolUse { id, name, input } => Some(OpenAiToolCall {
+                                id: id.clone(),
+                                r#type: "function".to_string(),
+                                function: OpenAiFunctionCall {
+                                    name: name.clone(),
+                                    arguments: serde_json::to_string(input).unwrap_or_default(),
+                                },
+                            }),
                             _ => None,
                         })
                         .collect();
@@ -537,10 +533,7 @@ mod tests {
             openai_req.messages[1].tool_call_id,
             Some("call_123".to_string())
         );
-        assert_eq!(
-            openai_req.messages[1].content,
-            Some("hi\n".to_string())
-        );
+        assert_eq!(openai_req.messages[1].content, Some("hi\n".to_string()));
     }
 
     #[test]

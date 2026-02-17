@@ -139,9 +139,10 @@ mod tests {
     async fn returns_error_on_missing_params() {
         let tool = FileWriteTool::new(None);
         assert!(tool.execute(serde_json::json!({})).await.is_err());
-        assert!(tool
-            .execute(serde_json::json!({"path": "/tmp/test"}))
-            .await
-            .is_err());
+        assert!(
+            tool.execute(serde_json::json!({"path": "/tmp/test"}))
+                .await
+                .is_err()
+        );
     }
 }

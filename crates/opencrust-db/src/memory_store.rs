@@ -9,6 +9,7 @@ use std::sync::{Mutex, MutexGuard};
 use tracing::info;
 use uuid::Uuid;
 
+use crate::VectorStore;
 use crate::migrations::MEMORY_SCHEMA_V1;
 
 const DEFAULT_RECALL_LIMIT: usize = 20;
@@ -114,6 +115,8 @@ pub trait MemoryProvider: Send + Sync {
 /// Backing store for long-term and session-scoped memory data.
 pub struct MemoryStore {
     conn: Mutex<Connection>,
+    /// Optional vector store for KNN search via sqlite-vec.
+    vector_store: Option<VectorStore>,
 }
 
 impl MemoryStore {
@@ -125,8 +128,22 @@ impl MemoryStore {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .map_err(|e| Error::Database(format!("failed to set pragmas: {e}")))?;
 
+        // Try to initialize the vector store (same DB path) for KNN search
+        let vector_store = match VectorStore::open(db_path) {
+            Ok(vs) if vs.vec_enabled() => {
+                info!("vector search enabled via sqlite-vec");
+                Some(vs)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                tracing::warn!("vector store init failed (continuing without KNN): {e}");
+                None
+            }
+        };
+
         let store = Self {
             conn: Mutex::new(conn),
+            vector_store,
         };
         store.run_migrations()?;
         Ok(store)
@@ -138,6 +155,7 @@ impl MemoryStore {
 
         let store = Self {
             conn: Mutex::new(conn),
+            vector_store: None,
         };
         store.run_migrations()?;
         Ok(store)
@@ -244,11 +262,42 @@ impl MemoryStore {
         )
         .map_err(|e| Error::Database(format!("failed to insert memory entry: {e}")))?;
 
+        // Also insert into the sqlite-vec virtual table for KNN search
+        if let (Some(vs), Some(emb)) = (&self.vector_store, &entry.embedding) {
+            let dims = emb.len();
+            if let Err(e) = vs.ensure_vec_table(dims) {
+                tracing::warn!("failed to ensure vec table: {e}");
+            } else if let Err(e) = vs.insert_embedding(&id, emb, dims) {
+                tracing::warn!("failed to insert vec embedding: {e}");
+            }
+        }
+
         Ok(id)
     }
 
     fn recall_sync(&self, query: RecallQuery) -> Result<Vec<MemoryEntry>> {
         let limit = clamp_limit(query.limit);
+
+        // If we have a query embedding and sqlite-vec is available, use KNN for
+        // initial candidate retrieval instead of loading all rows.
+        if let (Some(vs), Some(qe)) = (&self.vector_store, &query.query_embedding)
+            && vs.vec_enabled()
+        {
+            let dims = qe.len();
+            if let Ok(knn_results) = vs.search_nearest(qe, dims, limit.saturating_mul(4))
+                && !knn_results.is_empty()
+            {
+                let candidate_ids: Vec<&str> =
+                    knn_results.iter().map(|(id, _)| id.as_str()).collect();
+                let candidates = self.fetch_entries_by_ids(&candidate_ids)?;
+
+                if !candidates.is_empty() {
+                    return self.score_and_rank(candidates, &query, limit);
+                }
+            }
+            // Fall through to SQL-based retrieval if KNN returned nothing
+        }
+
         let candidates = self.query_candidates_sync(
             query.session_id.as_deref(),
             query.continuity_key.as_deref(),
@@ -260,6 +309,16 @@ impl MemoryStore {
             return Ok(Vec::new());
         }
 
+        self.score_and_rank(candidates, &query, limit)
+    }
+
+    /// Score candidates by semantic/text/recency and return the top `limit`.
+    fn score_and_rank(
+        &self,
+        candidates: Vec<MemoryEntry>,
+        query: &RecallQuery,
+        limit: usize,
+    ) -> Result<Vec<MemoryEntry>> {
         let mut scored: Vec<(f32, MemoryEntry)> = candidates
             .into_iter()
             .map(|entry| {
@@ -287,6 +346,33 @@ impl MemoryStore {
             .take(limit)
             .map(|(_, entry)| entry)
             .collect())
+    }
+
+    /// Fetch memory entries by their IDs.
+    fn fetch_entries_by_ids(&self, ids: &[&str]) -> Result<Vec<MemoryEntry>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.connection()?;
+        let placeholders: String = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, session_id, channel_id, user_id, continuity_key, role, content,
+                    embedding, embedding_model, embedding_dimensions, metadata, created_at
+             FROM memory_entries
+             WHERE id IN ({placeholders})"
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| Error::Database(format!("failed to prepare fetch by ids: {e}")))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(ids.iter()), row_to_entry)
+            .map_err(|e| Error::Database(format!("failed to fetch entries by ids: {e}")))?;
+
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Database(format!("failed to collect entries: {e}")))
     }
 
     fn recent_entries_sync(
