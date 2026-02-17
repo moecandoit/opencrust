@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="#getting-started">Getting Started</a> &middot;
+  <a href="#features">Features</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
   <a href="#contributing">Contributing</a> &middot;
   <a href="https://github.com/moecandoit/opencrust/issues">Roadmap</a>
@@ -36,42 +37,33 @@ Rewritten from [OpenClaw](https://github.com/openclaw/openclaw). High-performanc
 | **Fast startup** | Sub-second cold start vs multi-second Node.js boot. |
 | **Easy cross-compilation** | Build for Linux ARM, x86, macOS from a single machine. |
 
-## Architecture
+## Features
 
-OpenCrust is organized as a Cargo workspace with focused crates:
+### LLM Providers
+- **Anthropic Claude** — full support with streaming (SSE)
+- **OpenAI / compatible APIs** — GPT-4o, Azure, local endpoints via `base_url`
+- **Ollama** — local models with streaming support
 
-```
-crates/
-  opencrust-cli/        # CLI entry point and commands
-  opencrust-gateway/    # WebSocket gateway and HTTP API (axum/tokio)
-  opencrust-config/     # YAML/TOML configuration loading
-  opencrust-channels/   # Messaging channel trait and implementations
-  opencrust-agents/     # LLM provider abstraction and agent runtime
-  opencrust-db/         # SQLite storage and vector search
-  opencrust-plugins/    # WASM-based plugin system
-  opencrust-media/      # Image, audio, video processing
-  opencrust-security/   # Validation, allowlists, pairing codes
-  opencrust-common/     # Shared types, errors, utilities
-```
+### Telegram Bot
+- **Streaming responses** — text appears progressively as the LLM generates, with 1s buffer for short replies
+- **Markdown formatting** — automatic MarkdownV2 conversion with plain text fallback
+- **Bot commands** — `/start`, `/help`, `/clear`, `/pair`, `/users`
+- **User allowlist** — first user auto-becomes owner, invite others via 6-digit pairing codes
+- **Typing indicators** — active during generation and tool execution
+- **Context window management** — automatic history trimming to stay within token limits
 
-### How it maps to OpenClaw
+### Agent Runtime
+- **Tool execution loop** — bash, file read/write, web fetch with up to 10 tool iterations
+- **Memory recall** — SQLite-backed conversation memory with vector search (sqlite-vec)
+- **Embedding support** — Cohere embeddings for semantic memory retrieval
+- **Prompt injection detection** — input validation and sanitization
 
-| OpenClaw (TypeScript) | OpenCrust (Rust) | Status |
-|----------------------|------------------|--------|
-| `src/gateway/` | `opencrust-gateway` | Scaffolded |
-| `src/channels/` + `src/discord/` etc. | `opencrust-channels` | Trait defined |
-| `src/agents/` | `opencrust-agents` | Trait defined |
-| `src/config/` | `opencrust-config` | Working |
-| `src/memory/` | `opencrust-db` | Scaffolded |
-| `src/plugins/` | `opencrust-plugins` | Scaffolded |
-| `src/media/` | `opencrust-media` | Scaffolded |
-| `src/security/` + `src/pairing/` | `opencrust-security` | Scaffolded |
-| `src/cli/` | `opencrust-cli` | Working |
-| `src/infra/` | `opencrust-common` | Working |
-| `apps/macos/` | Keep as-is (Swift) | N/A |
-| `apps/ios/` | Keep as-is (Swift) | N/A |
-| `apps/android/` | Keep as-is (Kotlin) | N/A |
-| `ui/` | Keep as-is or port to Leptos | N/A |
+### Infrastructure
+- **Credential vault** — AES-256-GCM encrypted API key storage (`~/.opencrust/credentials/vault.json`)
+- **Config hot-reload** — edit `config.yml` and changes apply without restart (agent settings, log level)
+- **Daemonization** — `opencrust start --daemon` with PID file and log redirection
+- **WebSocket gateway** — session resume, ping/pong heartbeat, graceful shutdown
+- **Interactive setup** — `opencrust init` wizard guides through provider and API key configuration
 
 ## Getting Started
 
@@ -82,20 +74,26 @@ crates/
 ### Build
 
 ```bash
-cargo build
+cargo build --release
 ```
 
-### Run
+### Quick Start
 
 ```bash
-# Initialize config directory
-cargo run -- init
+# Interactive setup — picks your LLM provider, stores API keys, writes config
+opencrust init
 
-# Start the gateway
-cargo run -- start
+# Start the gateway (foreground)
+opencrust start
+
+# Or run as a background daemon
+opencrust start --daemon
 
 # Check status
-cargo run -- status
+opencrust status
+
+# Stop the daemon
+opencrust stop
 ```
 
 ### Configuration
@@ -107,18 +105,74 @@ gateway:
   host: "127.0.0.1"
   port: 3000
 
-channels:
-  my-telegram:
-    type: telegram
-    enabled: true
-    bot_token: "your-token-here"
-
 llm:
-  anthropic:
+  claude:
     provider: anthropic
     model: claude-sonnet-4-5-20250929
+    # api_key can also be stored in the credential vault or ANTHROPIC_API_KEY env var
     api_key: "sk-..."
+
+  ollama-local:
+    provider: ollama
+    model: llama3.1
+    base_url: "http://localhost:11434"
+
+channels:
+  telegram:
+    type: telegram
+    enabled: true
+    # bot_token can also be set via TELEGRAM_BOT_TOKEN env var
+    bot_token: "your-bot-token"
+
+agent:
+  system_prompt: "You are a helpful assistant."
+  max_tokens: 4096
+  max_context_tokens: 100000  # auto-trims old messages to fit
+
+memory:
+  enabled: true
+  embedding_provider: "cohere"
+
+embeddings:
+  cohere:
+    provider: cohere
+    model: embed-english-v3.0
+    api_key: "your-cohere-key"
 ```
+
+API keys are resolved in order: **credential vault** > **config file** > **environment variable**.
+
+## Architecture
+
+OpenCrust is organized as a Cargo workspace with focused crates:
+
+```
+crates/
+  opencrust-cli/        # CLI entry point, init wizard, daemon management
+  opencrust-gateway/    # WebSocket gateway, HTTP API, session management
+  opencrust-config/     # YAML/TOML loading, hot-reload file watcher
+  opencrust-channels/   # Channel trait + Telegram implementation (teloxide)
+  opencrust-agents/     # LLM providers, tool execution, streaming, agent runtime
+  opencrust-db/         # SQLite memory store, vector search (sqlite-vec)
+  opencrust-plugins/    # WASM-based plugin system
+  opencrust-media/      # Image, audio, video processing
+  opencrust-security/   # Credential vault, allowlists, pairing, input validation
+  opencrust-common/     # Shared types, errors, utilities
+```
+
+### Status
+
+| OpenClaw (TypeScript) | OpenCrust (Rust) | Status |
+|----------------------|------------------|--------|
+| `src/gateway/` | `opencrust-gateway` | **Working** — WebSocket, HTTP, sessions, hot-reload |
+| `src/channels/` | `opencrust-channels` | **Working** — Telegram with streaming |
+| `src/agents/` | `opencrust-agents` | **Working** — Anthropic, OpenAI, Ollama, tools |
+| `src/config/` | `opencrust-config` | **Working** — YAML/TOML, file watcher |
+| `src/memory/` | `opencrust-db` | **Working** — SQLite, sqlite-vec |
+| `src/plugins/` | `opencrust-plugins` | Scaffolded |
+| `src/media/` | `opencrust-media` | Scaffolded |
+| `src/security/` + `src/pairing/` | `opencrust-security` | **Working** — vault, allowlist, pairing |
+| `src/cli/` | `opencrust-cli` | **Working** — init, start, stop, status, daemon |
 
 ## Contributing
 
@@ -127,20 +181,16 @@ OpenCrust is open source under the MIT license. Contributions are welcome.
 ### How to contribute
 
 1. Check the [open issues](https://github.com/moecandoit/opencrust/issues) for work that needs doing
-2. Issues are labeled by area (`channel`, `agent`, `gateway`, etc.) and effort (`good-first-issue`, `help-wanted`)
+2. Issues are labeled by area (`telegram`, `agent`, `gateway`, `security`) and effort (`good-first-issue`, `help-wanted`)
 3. Fork, branch, and submit a PR
 4. Make sure `cargo check`, `cargo test`, and `cargo clippy` pass
 
-### Project priorities
+### Current priorities
 
-The current focus areas, roughly in order:
-
-1. **Core gateway** - Get the WebSocket server and message routing production-ready
-2. **LLM providers** - Implement Anthropic, OpenAI, and Ollama providers
-3. **Channel implementations** - Start with Telegram (`teloxide`) and Discord (`serenity`)
-4. **Database layer** - Session persistence and vector search with sqlite-vec
-5. **Plugin system** - WASM runtime for extensions
-6. **Remaining channels** - Slack, WhatsApp, Signal, and others
+1. **Telegram capabilities** — image handling, voice messages, web search tool
+2. **Discord channel** — second channel implementation via `serenity`
+3. **Plugin system** — WASM runtime for user extensions
+4. **Remaining channels** — Slack, WhatsApp, Signal
 
 ### Code style
 
