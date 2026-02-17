@@ -408,7 +408,11 @@ pub fn build_telegram_channels(
         let pairing_for_cb = Arc::clone(&pairing);
 
         let on_message: opencrust_channels::OnMessageFn = Arc::new(
-            move |chat_id: i64, user_id: String, user_name: String, text: String| {
+            move |chat_id: i64,
+                  user_id: String,
+                  user_name: String,
+                  text: String,
+                  _delta_tx: Option<tokio::sync::mpsc::Sender<String>>| {
                 let state = Arc::clone(&state_for_cb);
                 let allowlist = Arc::clone(&allowlist_for_cb);
                 let pairing = Arc::clone(&pairing_for_cb);
