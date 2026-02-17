@@ -81,10 +81,7 @@ mod tests {
     use super::*;
 
     fn make_settings(pairs: Vec<(&str, serde_json::Value)>) -> HashMap<String, serde_json::Value> {
-        pairs
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect()
+        pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
     }
 
     #[test]
@@ -131,13 +128,9 @@ mod tests {
 
     #[test]
     fn missing_application_id_fails() {
-        let settings = make_settings(vec![(
-            "bot_token",
-            serde_json::json!("my-secret-token"),
-        )]);
+        let settings = make_settings(vec![("bot_token", serde_json::json!("my-secret-token"))]);
 
-        let err =
-            DiscordConfig::from_settings(&settings).expect_err("should fail without app id");
+        let err = DiscordConfig::from_settings(&settings).expect_err("should fail without app id");
         assert!(err.to_string().contains("application_id"));
     }
 

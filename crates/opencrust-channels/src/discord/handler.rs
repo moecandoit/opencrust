@@ -6,7 +6,7 @@ use tracing::{info, warn};
 
 use crate::traits::{ChannelEvent, ChannelStatus};
 
-use super::convert;
+use super::{commands, convert};
 
 /// Serenity event handler that bridges Discord events into OpenCrust `ChannelEvent`s.
 pub struct DiscordHandler {
@@ -15,13 +15,21 @@ pub struct DiscordHandler {
 
     /// The channel identifier string used in OpenCrust messages.
     channel_id: String,
+
+    /// Guild IDs for slash command registration. Empty means global commands.
+    guild_ids: Vec<u64>,
 }
 
 impl DiscordHandler {
-    pub fn new(event_tx: broadcast::Sender<ChannelEvent>, channel_id: String) -> Self {
+    pub fn new(
+        event_tx: broadcast::Sender<ChannelEvent>,
+        channel_id: String,
+        guild_ids: Vec<u64>,
+    ) -> Self {
         Self {
             event_tx,
             channel_id,
+            guild_ids,
         }
     }
 
@@ -46,6 +54,13 @@ impl EventHandler for DiscordHandler {
                 .unwrap_or_default(),
             ready.guilds.len()
         );
+
+        let command_defs = commands::all_commands();
+        if let Err(e) = commands::register_commands(&_ctx, &self.guild_ids, &command_defs).await {
+            warn!("failed to register discord slash commands: {e}");
+        } else {
+            info!("registered {} discord slash command(s)", command_defs.len());
+        }
 
         self.emit(ChannelEvent::StatusChanged(ChannelStatus::Connected));
     }
@@ -106,14 +121,15 @@ mod tests {
     #[test]
     fn handler_construction() {
         let (tx, _rx) = broadcast::channel::<ChannelEvent>(16);
-        let handler = DiscordHandler::new(tx, "discord".to_string());
+        let handler = DiscordHandler::new(tx, "discord".to_string(), vec![]);
         assert_eq!(handler.channel_id, "discord");
+        assert!(handler.guild_ids.is_empty());
     }
 
     #[test]
     fn emit_with_no_subscribers_does_not_panic() {
         let (tx, _) = broadcast::channel::<ChannelEvent>(16);
-        let handler = DiscordHandler::new(tx, "discord".to_string());
+        let handler = DiscordHandler::new(tx, "discord".to_string(), vec![]);
         // Drop the only receiver — emit should not panic
         handler.emit(ChannelEvent::StatusChanged(ChannelStatus::Connected));
     }

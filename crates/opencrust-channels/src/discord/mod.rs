@@ -143,12 +143,17 @@ impl Channel for DiscordChannel {
         self.status = ChannelStatus::Connecting;
         info!("connecting to Discord...");
 
-        let handler = DiscordHandler::new(self.event_tx.clone(), "discord".to_string());
+        let handler = DiscordHandler::new(
+            self.event_tx.clone(),
+            "discord".to_string(),
+            self.config.guild_ids.clone(),
+        );
 
-        let mut client = serenity_model::Client::builder(&self.config.bot_token, self.config.intents)
-            .event_handler(handler)
-            .await
-            .map_err(|e| Error::Channel(format!("failed to build Discord client: {e}")))?;
+        let mut client =
+            serenity_model::Client::builder(&self.config.bot_token, self.config.intents)
+                .event_handler(handler)
+                .await
+                .map_err(|e| Error::Channel(format!("failed to build Discord client: {e}")))?;
 
         // Store the HTTP client for sending messages
         self.http = Some(client.http.clone());
@@ -213,9 +218,7 @@ impl Channel for DiscordChannel {
             .and_then(|v| v.as_str())
             .and_then(|s| s.parse::<u64>().ok())
             .ok_or_else(|| {
-                Error::Channel(
-                    "message metadata must contain 'discord_channel_id' to send".into(),
-                )
+                Error::Channel("message metadata must contain 'discord_channel_id' to send".into())
             })?;
 
         let channel = serenity_model::ChannelId::new(discord_channel_id);
@@ -278,10 +281,7 @@ mod tests {
     #[test]
     fn from_settings_with_valid_config() {
         let mut settings = HashMap::new();
-        settings.insert(
-            "bot_token".to_string(),
-            serde_json::json!("my-test-token"),
-        );
+        settings.insert("bot_token".to_string(), serde_json::json!("my-test-token"));
         settings.insert(
             "application_id".to_string(),
             serde_json::json!(123456789_u64),
@@ -300,8 +300,7 @@ mod tests {
             serde_json::json!(123456789_u64),
         );
 
-        let err =
-            DiscordChannel::from_settings(&settings).expect_err("should fail without token");
+        let err = DiscordChannel::from_settings(&settings).expect_err("should fail without token");
         assert!(err.to_string().contains("bot_token"));
     }
 

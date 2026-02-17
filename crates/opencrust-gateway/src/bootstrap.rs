@@ -298,9 +298,7 @@ pub fn spawn_discord_listener(
                             if let Some(mut session) = state.sessions.get_mut(&session_id) {
                                 session.history.push(opencrust_agents::ChatMessage {
                                     role: opencrust_agents::ChatRole::User,
-                                    content: opencrust_agents::MessagePart::Text(
-                                        user_text.clone(),
-                                    ),
+                                    content: opencrust_agents::MessagePart::Text(user_text.clone()),
                                 });
                                 session.history.push(opencrust_agents::ChatMessage {
                                     role: opencrust_agents::ChatRole::Assistant,
@@ -323,10 +321,10 @@ pub fn spawn_discord_listener(
                                 metadata: msg.metadata.clone(),
                             };
 
-                            if let Some(discord) = state.channels.get("discord") {
-                                if let Err(e) = discord.send_message(&reply).await {
-                                    warn!("failed to send Discord reply: {e}");
-                                }
+                            if let Some(discord) = state.channels.get("discord")
+                                && let Err(e) = discord.send_message(&reply).await
+                            {
+                                warn!("failed to send Discord reply: {e}");
                             }
                         }
                         Err(e) => {

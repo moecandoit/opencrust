@@ -61,14 +61,11 @@ pub fn discord_message_to_opencrust(
 }
 
 /// Convert a reaction add event into an OpenCrust `Message` with `Reaction` content.
-pub fn reaction_to_opencrust(
-    reaction: &serenity_model::Reaction,
-    channel_id_str: &str,
-) -> Message {
+pub fn reaction_to_opencrust(reaction: &serenity_model::Reaction, channel_id_str: &str) -> Message {
     let user_id = reaction
         .user_id
         .map(|id| UserId::from_string(id.to_string()))
-        .unwrap_or_else(UserId::new);
+        .unwrap_or_default();
 
     let emoji = match &reaction.emoji {
         serenity_model::ReactionType::Unicode(s) => s.clone(),
@@ -79,7 +76,10 @@ pub fn reaction_to_opencrust(
     };
 
     Message {
-        id: format!("discord-reaction-{}-{}", reaction.message_id, reaction.channel_id),
+        id: format!(
+            "discord-reaction-{}-{}",
+            reaction.message_id, reaction.channel_id
+        ),
         session_id: SessionId::from_string(format!("discord-{}", reaction.channel_id)),
         channel_id: ChannelId::from_string(channel_id_str),
         user_id,
