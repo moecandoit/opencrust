@@ -11,10 +11,17 @@ pub struct WasmRuntime {
     manifest: PluginManifest,
     engine: Engine,
     module: Module,
+    ticker_handle: tokio::task::JoinHandle<()>,
 }
 
 struct WasmState {
     ctx: WasiP1Ctx,
+}
+
+impl Drop for WasmRuntime {
+    fn drop(&mut self) {
+        self.ticker_handle.abort();
+    }
 }
 
 impl WasmRuntime {
@@ -32,10 +39,20 @@ impl WasmRuntime {
         let module = Module::new(&engine, &wasm_bytes)
             .map_err(|e| Error::Plugin(format!("module error: {e}")))?;
 
+        let ticker_engine = engine.clone();
+        let ticker_handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                ticker_engine.increment_epoch();
+            }
+        });
+
         Ok(Self {
             manifest,
             engine,
             module,
+            ticker_handle,
         })
     }
 }
@@ -98,14 +115,10 @@ impl Plugin for WasmRuntime {
         let mut store = Store::new(&self.engine, state);
 
         // Timeout
-        store.set_epoch_deadline(1);
-        let engine = self.engine.clone();
+        // We set the deadline to the current engine epoch + timeout_secs.
+        // The background ticker increments the epoch every second.
         let timeout_secs = self.manifest.limits.timeout_secs;
-
-        tokio::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(timeout_secs)).await;
-            engine.increment_epoch();
-        });
+        store.set_epoch_deadline(timeout_secs);
 
         let instance = linker
             .instantiate_async(&mut store, &self.module)
