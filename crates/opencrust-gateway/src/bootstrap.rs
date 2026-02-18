@@ -19,13 +19,15 @@ use crate::state::SharedState;
 
 /// Default vault path under the user's home directory.
 fn default_vault_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".opencrust").join("credentials").join("vault.json"))
+    Some(
+        opencrust_config::ConfigLoader::default_config_dir()
+            .join("credentials")
+            .join("vault.json"),
+    )
 }
 
 fn default_allowlist_path() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(".opencrust").join("allowlist.json"))
-        .unwrap_or_else(|| PathBuf::from(".opencrust/allowlist.json"))
+    opencrust_config::ConfigLoader::default_config_dir().join("allowlist.json")
 }
 
 /// Resolve an API key using the priority chain: vault -> config -> env var.
@@ -124,8 +126,7 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
         let data_dir = config
             .data_dir
             .clone()
-            .or_else(|| dirs::home_dir().map(|h| h.join(".opencrust").join("data")))
-            .unwrap_or_else(|| std::path::PathBuf::from(".opencrust/data"));
+            .unwrap_or_else(|| opencrust_config::ConfigLoader::default_config_dir().join("data"));
 
         if let Err(e) = std::fs::create_dir_all(&data_dir) {
             warn!("failed to create data directory: {e}");
@@ -183,9 +184,7 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
     }
 
     // --- Skills ---
-    let skills_dir = dirs::home_dir()
-        .map(|h| h.join(".opencrust").join("skills"))
-        .unwrap_or_else(|| std::path::PathBuf::from(".opencrust/skills"));
+    let skills_dir = opencrust_config::ConfigLoader::default_config_dir().join("skills");
     let scanner = opencrust_skills::SkillScanner::new(&skills_dir);
     match scanner.discover() {
         Ok(skills) if !skills.is_empty() => {

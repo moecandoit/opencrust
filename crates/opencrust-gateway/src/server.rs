@@ -38,9 +38,7 @@ impl GatewayServer {
         state.mcp_manager = Some(mcp_manager);
 
         // Start config hot-reload watcher
-        let config_path = dirs::home_dir()
-            .map(|h| h.join(".opencrust").join("config.yml"))
-            .unwrap_or_else(|| ".opencrust/config.yml".into());
+        let config_path = opencrust_config::ConfigLoader::default_config_dir().join("config.yml");
 
         if config_path.exists() {
             match ConfigWatcher::start(config_path.clone(), state.current_config()) {

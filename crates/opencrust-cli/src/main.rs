@@ -128,9 +128,7 @@ enum MigrateCommands {
 }
 
 fn opencrust_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|h| h.join(".opencrust"))
-        .unwrap_or_else(|| PathBuf::from(".opencrust"))
+    opencrust_config::ConfigLoader::default_config_dir()
 }
 
 fn pid_file_path() -> PathBuf {
