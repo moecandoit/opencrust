@@ -7,10 +7,15 @@ description = "Plugin system and extension runtime for OpenCrust"
 
 [dependencies]
 opencrust-common = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+toml = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 async-trait = { workspace = true }
 wasmtime = { workspace = true }
+wasmtime-wasi = "28"
+anyhow = { workspace = true }
+bytes = { workspace = true }
+notify = { workspace = true }

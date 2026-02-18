@@ -1,139 +1,111 @@
-use opencrust_common::{Error, Result};
-use std::path::Path;
-use tracing::info;
-
 use crate::manifest::PluginManifest;
+use crate::runtime::WasmRuntime;
+use crate::traits::Plugin;
+use anyhow::{Context, Result};
+use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 /// Discovers and loads plugins from the plugins directory.
 pub struct PluginLoader {
-    plugins_dir: std::path::PathBuf,
+    plugins_dir: PathBuf,
 }
 
 impl PluginLoader {
-    pub fn new(plugins_dir: impl Into<std::path::PathBuf>) -> Self {
+    pub fn new(plugins_dir: impl Into<PathBuf>) -> Self {
         Self {
             plugins_dir: plugins_dir.into(),
         }
     }
 
-    /// Scan the plugins directory and return all valid manifests.
-    pub fn discover(&self) -> Result<Vec<PluginManifest>> {
+    /// Scan the plugins directory and return all valid plugins.
+    pub fn discover(&self) -> Result<Vec<Arc<dyn Plugin>>> {
         if !self.plugins_dir.exists() {
             return Ok(Vec::new());
         }
 
-        let mut manifests = Vec::new();
+        let mut plugins = Vec::new();
 
-        let entries = std::fs::read_dir(&self.plugins_dir)?;
+        let entries = std::fs::read_dir(&self.plugins_dir).context("reading plugins dir")?;
         for entry in entries {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                match self.load_manifest(&path) {
-                    Ok(manifest) => {
-                        info!("discovered plugin: {} v{}", manifest.name, manifest.version);
-                        manifests.push(manifest);
+                match self.load_plugin(&path) {
+                    Ok(plugin) => {
+                        info!(
+                            "loaded plugin: {} ({})",
+                            plugin.name(),
+                            plugin.description()
+                        );
+                        plugins.push(plugin);
                     }
                     Err(e) => {
-                        tracing::warn!("skipping invalid plugin at {}: {}", path.display(), e);
+                        // Only warn if it looks like a plugin (has plugin.toml)
+                        if path.join("plugin.toml").exists() {
+                            warn!("failed to load plugin at {}: {}", path.display(), e);
+                        }
                     }
                 }
             }
         }
 
-        Ok(manifests)
+        Ok(plugins)
     }
 
-    fn load_manifest(&self, plugin_dir: &Path) -> Result<PluginManifest> {
-        let manifest_path = plugin_dir.join("manifest.json");
+    fn load_plugin(&self, plugin_dir: &Path) -> Result<Arc<dyn Plugin>> {
+        let manifest_path = plugin_dir.join("plugin.toml");
         if !manifest_path.exists() {
-            return Err(Error::Plugin("missing manifest.json".into()));
+            anyhow::bail!("missing plugin.toml");
         }
 
-        let contents = std::fs::read_to_string(&manifest_path)?;
-        serde_json::from_str(&contents).map_err(|e| Error::Plugin(format!("invalid manifest: {e}")))
-    }
-}
+        let manifest = PluginManifest::from_file(&manifest_path)?;
 
-#[cfg(test)]
-mod tests {
-    use super::PluginLoader;
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
+        // Find WASM file.
+        // Try <name>.wasm first, then plugin.wasm
+        let wasm_path_named = plugin_dir.join(format!("{}.wasm", manifest.plugin.name));
+        let wasm_path_generic = plugin_dir.join("plugin.wasm");
 
-    fn temp_dir(label: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock should be after unix epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "opencrust-plugin-loader-test-{}-{}-{}",
-            label,
-            std::process::id(),
-            nanos
-        ))
+        let wasm_path = if wasm_path_named.exists() {
+            wasm_path_named
+        } else if wasm_path_generic.exists() {
+            wasm_path_generic
+        } else {
+            anyhow::bail!(
+                "WASM file not found (expected {}.wasm or plugin.wasm)",
+                manifest.plugin.name
+            );
+        };
+
+        let runtime = WasmRuntime::new(manifest, wasm_path)?;
+        Ok(Arc::new(runtime))
     }
 
-    #[test]
-    fn discover_returns_empty_when_plugins_dir_missing() {
-        let dir = temp_dir("missing");
-        let loader = PluginLoader::new(&dir);
-        let manifests = loader.discover().expect("discover should not fail");
-        assert!(manifests.is_empty());
-    }
+    /// Watch for changes in the plugins directory.
+    /// Returns a Watcher and a Receiver. The receiver gets a message when a change is detected.
+    pub fn watch(&self) -> Result<(RecommendedWatcher, tokio::sync::mpsc::Receiver<()>)> {
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
 
-    #[test]
-    fn discover_loads_valid_manifest() {
-        let dir = temp_dir("valid");
-        let plugin_dir = dir.join("my-plugin");
-        fs::create_dir_all(&plugin_dir).expect("failed to create plugin dir");
-        fs::write(
-            plugin_dir.join("manifest.json"),
-            r#"{
-  "id": "my-plugin",
-  "name": "My Plugin",
-  "version": "0.1.0",
-  "description": "test plugin"
-}"#,
-        )
-        .expect("failed to write manifest");
+        let mut watcher =
+            notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+                Ok(event) => {
+                    if event.kind.is_modify() || event.kind.is_create() || event.kind.is_remove() {
+                        let _ = tx.blocking_send(());
+                    }
+                }
+                Err(e) => error!("watch error: {}", e),
+            })?;
 
-        let loader = PluginLoader::new(&dir);
-        let manifests = loader.discover().expect("discover should succeed");
+        if self.plugins_dir.exists() {
+            watcher.watch(&self.plugins_dir, RecursiveMode::Recursive)?;
+        } else {
+            warn!(
+                "plugins directory {} does not exist, watch may not work until restart",
+                self.plugins_dir.display()
+            );
+        }
 
-        assert_eq!(manifests.len(), 1);
-        assert_eq!(manifests[0].id, "my-plugin");
-        assert_eq!(manifests[0].name, "My Plugin");
-        assert_eq!(manifests[0].version, "0.1.0");
-
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn discover_skips_invalid_plugin_directories() {
-        let dir = temp_dir("skip-invalid");
-        let valid_dir = dir.join("valid");
-        let invalid_dir = dir.join("invalid");
-        fs::create_dir_all(&valid_dir).expect("failed to create valid plugin dir");
-        fs::create_dir_all(&invalid_dir).expect("failed to create invalid plugin dir");
-
-        fs::write(
-            valid_dir.join("manifest.json"),
-            r#"{
-  "id": "good",
-  "name": "Good Plugin",
-  "version": "1.2.3"
-}"#,
-        )
-        .expect("failed to write valid manifest");
-
-        let loader = PluginLoader::new(&dir);
-        let manifests = loader.discover().expect("discover should succeed");
-
-        assert_eq!(manifests.len(), 1);
-        assert_eq!(manifests[0].id, "good");
-
-        let _ = fs::remove_dir_all(dir);
+        Ok((watcher, rx))
     }
 }

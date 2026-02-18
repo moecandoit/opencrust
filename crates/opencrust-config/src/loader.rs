@@ -12,10 +12,33 @@ pub struct ConfigLoader {
 
 impl ConfigLoader {
     pub fn new() -> Result<Self> {
-        let config_dir = dirs::home_dir()
-            .ok_or_else(|| Error::Config("could not determine home directory".into()))?
-            .join(".opencrust");
+        let config_dir = Self::default_config_dir();
         Ok(Self { config_dir })
+    }
+
+    pub fn default_config_dir() -> PathBuf {
+        let home_config = dirs::home_dir().map(|h| h.join(".opencrust"));
+        let xdg_config = dirs::config_dir().map(|c| c.join("opencrust"));
+
+        match (xdg_config, home_config) {
+            (Some(xdg), Some(home)) => {
+                // If XDG exists, prefer it.
+                if xdg.exists() {
+                    xdg
+                }
+                // If Home exists (and XDG doesn't), use Home (migration/legacy case).
+                else if home.exists() {
+                    home
+                }
+                // If neither exists, prefer XDG for new installs.
+                else {
+                    xdg
+                }
+            }
+            (Some(xdg), None) => xdg,
+            (None, Some(home)) => home,
+            (None, None) => PathBuf::from(".opencrust"),
+        }
     }
 
     pub fn with_dir(config_dir: impl Into<PathBuf>) -> Self {

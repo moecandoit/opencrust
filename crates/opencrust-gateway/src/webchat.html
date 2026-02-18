@@ -430,6 +430,7 @@
     const connPill = document.getElementById("conn-pill");
     const sessionEl = document.getElementById("session");
     const apiStatusEl = document.getElementById("api-status");
+    const keyGatewayEl = document.getElementById("key-gateway");
     const keyOpenAiEl = document.getElementById("key-openai");
     const keyAnthropicEl = document.getElementById("key-anthropic");
     const keyMinimaxEl = document.getElementById("key-minimax");
@@ -445,7 +446,9 @@
 
     function wsUrl() {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      return `${proto}//${location.host}/ws`;
+      const base = `${proto}//${location.host}/ws`;
+      const key = keyGatewayEl.value.trim();
+      return key ? `${base}?token=${encodeURIComponent(key)}` : base;
     }
 
     function setConnectionState(isConnected) {
@@ -486,11 +489,13 @@
     }
 
     function loadKeys() {
+      keyGatewayEl.value = localStorage.getItem(`${keyStoragePrefix}gateway`) || "";
       keyOpenAiEl.value = localStorage.getItem(`${keyStoragePrefix}openai`) || "";
       keyAnthropicEl.value = localStorage.getItem(`${keyStoragePrefix}anthropic`) || "";
       keyMinimaxEl.value = localStorage.getItem(`${keyStoragePrefix}minimax`) || "";
 
       const count =
+        Number(Boolean(keyGatewayEl.value)) +
         Number(Boolean(keyOpenAiEl.value)) +
         Number(Boolean(keyAnthropicEl.value)) +
         Number(Boolean(keyMinimaxEl.value));
@@ -498,6 +503,7 @@
     }
 
     function saveKeys() {
+      persistKey("gateway", keyGatewayEl.value);
       persistKey("openai", keyOpenAiEl.value);
       persistKey("anthropic", keyAnthropicEl.value);
       persistKey("minimax", keyMinimaxEl.value);
@@ -505,9 +511,11 @@
     }
 
     function clearKeys() {
+      localStorage.removeItem(`${keyStoragePrefix}gateway`);
       localStorage.removeItem(`${keyStoragePrefix}openai`);
       localStorage.removeItem(`${keyStoragePrefix}anthropic`);
       localStorage.removeItem(`${keyStoragePrefix}minimax`);
+      keyGatewayEl.value = "";
       keyOpenAiEl.value = "";
       keyAnthropicEl.value = "";
       keyMinimaxEl.value = "";
