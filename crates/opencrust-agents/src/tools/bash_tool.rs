@@ -132,7 +132,11 @@ mod tests {
     #[tokio::test]
     async fn reports_error_on_failing_command() {
         let tool = BashTool::new(None);
-        let cmd = if cfg!(target_os = "windows") { "exit 1" } else { "false" };
+        let cmd = if cfg!(target_os = "windows") {
+            "exit 1"
+        } else {
+            "false"
+        };
         let output = tool
             .execute(serde_json::json!({"command": cmd}))
             .await
@@ -150,7 +154,11 @@ mod tests {
     #[tokio::test]
     async fn captures_stderr() {
         let tool = BashTool::new(None);
-        let cmd = if cfg!(target_os = "windows") { "Write-Error 'err'" } else { "echo err >&2" };
+        let cmd = if cfg!(target_os = "windows") {
+            "Write-Error 'err'"
+        } else {
+            "echo err >&2"
+        };
         let output = tool
             .execute(serde_json::json!({"command": cmd}))
             .await

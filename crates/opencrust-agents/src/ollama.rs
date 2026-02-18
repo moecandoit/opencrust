@@ -72,7 +72,10 @@ impl OllamaProvider {
                                         }
                                     }));
                                 }
-                                ContentBlock::ToolResult { tool_use_id: _, content } => {
+                                ContentBlock::ToolResult {
+                                    tool_use_id: _,
+                                    content,
+                                } => {
                                     text_parts.push(content.clone());
                                 }
                             }
@@ -124,16 +127,20 @@ impl OllamaProvider {
 
         // Serialize tool definitions into Ollama's tools format
         if !request.tools.is_empty() {
-            let tools: Vec<Value> = request.tools.iter().map(|t| {
-                serde_json::json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    }
+            let tools: Vec<Value> = request
+                .tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                    })
                 })
-            }).collect();
+                .collect();
             body["tools"] = serde_json::json!(tools);
             info!("sending {} tool definitions to Ollama", request.tools.len());
         }
@@ -220,13 +227,17 @@ impl OllamaProvider {
                             });
                         }
                         if blocks.is_empty() {
-                            blocks.push(ContentBlock::Text { text: String::new() });
+                            blocks.push(ContentBlock::Text {
+                                text: String::new(),
+                            });
                         }
                         blocks
                     })
                     .unwrap_or_default();
 
-                let has_tool_use = content.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }));
+                let has_tool_use = content
+                    .iter()
+                    .any(|b| matches!(b, ContentBlock::ToolUse { .. }));
 
                 Ok(Some(LlmResponse {
                     content,
@@ -326,13 +337,17 @@ impl LlmProvider for OllamaProvider {
                     });
                 }
                 if blocks.is_empty() {
-                    blocks.push(ContentBlock::Text { text: String::new() });
+                    blocks.push(ContentBlock::Text {
+                        text: String::new(),
+                    });
                 }
                 blocks
             })
             .unwrap_or_default();
 
-        let has_tool_use = content.iter().any(|b| matches!(b, ContentBlock::ToolUse { .. }));
+        let has_tool_use = content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolUse { .. }));
 
         Ok(LlmResponse {
             content,
@@ -566,13 +581,11 @@ mod tests {
     #[test]
     fn request_serialization_includes_tools() {
         let provider = OllamaProvider::new(None, None);
-        let tools = vec![
-            crate::providers::ToolDefinition {
-                name: "test_tool".to_string(),
-                description: "A test tool".to_string(),
-                input_schema: json!({"type": "object"}),
-            }
-        ];
+        let tools = vec![crate::providers::ToolDefinition {
+            name: "test_tool".to_string(),
+            description: "A test tool".to_string(),
+            input_schema: json!({"type": "object"}),
+        }];
         let req = LlmRequest {
             model: "llama3".to_string(),
             messages: vec![],
@@ -583,7 +596,7 @@ mod tests {
         };
 
         let body = provider.build_request_body(&req, false);
-        
+
         // precise verification of tool structure
         let tools_json = body.get("tools").expect("tools field missing");
         let tool = &tools_json[0];
