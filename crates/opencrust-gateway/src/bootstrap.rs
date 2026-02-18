@@ -3,8 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use opencrust_agents::{
     AgentRuntime, AnthropicProvider, BashTool, ChatMessage, ChatRole, CohereEmbeddingProvider,
-    FileReadTool, FileWriteTool, MessagePart, OllamaProvider, OpenAiProvider, WebFetchTool,
+    FileReadTool, FileWriteTool, McpManager, MessagePart, OllamaProvider, OpenAiProvider,
+    WebFetchTool,
 };
+use opencrust_agents::tools::Tool;
 use opencrust_channels::{Channel, SlackChannel, SlackOnMessageFn, TelegramChannel, WhatsAppChannel, WhatsAppOnMessageFn};
 use opencrust_config::AppConfig;
 use opencrust_db::MemoryStore;
@@ -214,6 +216,66 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
     }
 
     runtime
+}
+
+/// Build MCP tools from merged config (config.yml + mcp.json).
+///
+/// Returns the manager and a flat list of bridged tools ready for registration.
+pub async fn build_mcp_tools(config: &AppConfig) -> (McpManager, Vec<Box<dyn Tool>>) {
+    let loader = match opencrust_config::ConfigLoader::new() {
+        Ok(l) => l,
+        Err(e) => {
+            warn!("failed to create config loader for MCP: {e}");
+            return (McpManager::new(), Vec::new());
+        }
+    };
+
+    let mcp_configs = loader.merged_mcp_config(config);
+    if mcp_configs.is_empty() {
+        return (McpManager::new(), Vec::new());
+    }
+
+    let manager = McpManager::new();
+    let mut all_tools: Vec<Box<dyn Tool>> = Vec::new();
+
+    for (name, server_config) in &mcp_configs {
+        let enabled = server_config.enabled.unwrap_or(true);
+        if !enabled {
+            info!("MCP server '{name}' is disabled, skipping");
+            continue;
+        }
+
+        if server_config.transport != "stdio" {
+            warn!("MCP server '{name}' uses unsupported transport '{}', skipping (only stdio is supported)", server_config.transport);
+            continue;
+        }
+
+        let timeout_secs = server_config.timeout.unwrap_or(30);
+
+        match manager
+            .connect(
+                name,
+                &server_config.command,
+                &server_config.args,
+                &server_config.env,
+                timeout_secs,
+            )
+            .await
+        {
+            Ok(()) => {
+                let tools = manager
+                    .take_tools(name, std::time::Duration::from_secs(timeout_secs))
+                    .await;
+                info!("MCP server '{name}': registered {} tool(s)", tools.len());
+                all_tools.extend(tools);
+            }
+            Err(e) => {
+                warn!("failed to connect MCP server '{name}': {e}");
+            }
+        }
+    }
+
+    (manager, all_tools)
 }
 
 /// Build and connect configured channels that can be initialized before state is wrapped in Arc.

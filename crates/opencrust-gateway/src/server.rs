@@ -6,8 +6,8 @@ use tokio::net::TcpListener;
 use tracing::{info, warn};
 
 use crate::bootstrap::{
-    build_agent_runtime, build_channels, build_slack_channels, build_telegram_channels,
-    build_whatsapp_channels, spawn_discord_listener,
+    build_agent_runtime, build_channels, build_mcp_tools, build_slack_channels,
+    build_telegram_channels, build_whatsapp_channels, spawn_discord_listener,
 };
 use crate::router::build_router;
 use crate::state::AppState;
@@ -25,9 +25,17 @@ impl GatewayServer {
     pub async fn run(self) -> Result<()> {
         let addr = format!("{}:{}", self.config.gateway.host, self.config.gateway.port);
 
-        let agents = build_agent_runtime(&self.config);
+        let mut agents = build_agent_runtime(&self.config);
+
+        // Connect MCP servers and register their tools
+        let (mcp_manager, mcp_tools) = build_mcp_tools(&self.config).await;
+        for tool in mcp_tools {
+            agents.register_tool(tool);
+        }
+
         let (channels, discord_rx) = build_channels(&self.config).await;
         let mut state = AppState::new(self.config, agents, channels);
+        state.mcp_manager = Some(mcp_manager);
 
         // Start config hot-reload watcher
         let config_path = dirs::home_dir()
@@ -98,6 +106,7 @@ impl GatewayServer {
         let whatsapp_state: opencrust_channels::whatsapp::webhook::WhatsAppState =
             Arc::new(whatsapp_channels);
 
+        let state_for_shutdown = Arc::clone(&state);
         let app = build_router(state, whatsapp_state);
 
         let listener = TcpListener::bind(&addr).await?;
@@ -108,6 +117,12 @@ impl GatewayServer {
             .with_graceful_shutdown(shutdown_signal())
             .await
             .map_err(|e| opencrust_common::Error::Gateway(format!("server error: {e}")))?;
+
+        // Disconnect MCP servers on shutdown
+        if let Some(ref manager) = state_for_shutdown.mcp_manager {
+            info!("disconnecting MCP servers...");
+            manager.disconnect_all().await;
+        }
 
         info!("gateway shut down gracefully");
         Ok(())
