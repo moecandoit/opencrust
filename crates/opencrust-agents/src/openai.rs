@@ -1,10 +1,15 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
+use futures::stream::Stream;
+use futures::StreamExt;
 use opencrust_common::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, instrument};
 
 use crate::providers::{
-    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart, Usage,
+    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart,
+    StreamEvent, Usage,
 };
 
 const DEFAULT_MODEL: &str = "gpt-4o";
@@ -228,6 +233,106 @@ impl LlmProvider for OpenAiProvider {
         Ok(from_openai_response(api_response))
     }
 
+    #[instrument(skip(self, request), fields(model))]
+    async fn stream_complete(
+        &self,
+        request: &LlmRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        let body = self.build_request(request);
+
+        tracing::Span::current().record("model", body.model.as_str());
+        debug!("openai stream request: model={}", body.model);
+
+        // Inject stream=true into the serialized request
+        let mut body_value = serde_json::to_value(&body)
+            .map_err(|e| Error::Agent(format!("failed to serialize request: {e}")))?;
+        body_value["stream"] = serde_json::Value::Bool(true);
+
+        let response = self
+            .client
+            .post(self.endpoint())
+            .header("authorization", format!("Bearer {}", self.api_key))
+            .header("content-type", "application/json")
+            .json(&body_value)
+            .send()
+            .await
+            .map_err(|e| Error::Agent(format!("openai stream request failed: {e}")))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(Error::Agent(format!(
+                "openai API error: status={status}, body={body}"
+            )));
+        }
+
+        let byte_stream: Pin<
+            Box<dyn Stream<Item = std::result::Result<bytes::Bytes, reqwest::Error>> + Send>,
+        > = Box::pin(response.bytes_stream());
+
+        let event_stream = futures::stream::unfold(
+            (byte_stream, String::new()),
+            |(mut stream, mut buffer)| async move {
+                loop {
+                    // Try to consume a complete SSE event from the buffer
+                    if let Some(pos) = buffer.find("\n\n") {
+                        let event_str = buffer[..pos].to_string();
+                        buffer = buffer[pos + 2..].to_string();
+
+                        // Extract the data: line
+                        let mut data_line = None;
+                        for line in event_str.lines() {
+                            if let Some(d) = line.strip_prefix("data: ") {
+                                data_line = Some(d.to_string());
+                            }
+                        }
+
+                        if let Some(data) = data_line {
+                            // OpenAI sends "data: [DONE]" as the final event
+                            if data == "[DONE]" {
+                                return Some((Ok(StreamEvent::MessageStop), (stream, buffer)));
+                            }
+
+                            if let Some(events) = parse_stream_chunk(&data) {
+                                // Yield the first event; remaining events get pushed back
+                                // into the buffer as synthetic SSE blocks so the loop
+                                // picks them up on the next iteration.
+                                let mut iter = events.into_iter();
+                                let first = iter.next().unwrap();
+                                for extra in iter.rev() {
+                                    // Push synthetic SSE event back into buffer
+                                    let json =
+                                        serde_json::to_string(&SyntheticEvent(extra)).unwrap();
+                                    buffer =
+                                        format!("data: {json}\n\n{buffer}");
+                                }
+                                return Some((Ok(first), (stream, buffer)));
+                            }
+                            continue;
+                        }
+                        continue;
+                    }
+
+                    // Need more data from the byte stream
+                    match stream.next().await {
+                        Some(Ok(bytes)) => {
+                            buffer.push_str(&String::from_utf8_lossy(&bytes));
+                        }
+                        Some(Err(e)) => {
+                            return Some((
+                                Err(Error::Agent(format!("stream read error: {e}"))),
+                                (stream, buffer),
+                            ));
+                        }
+                        None => return None,
+                    }
+                }
+            },
+        );
+
+        Ok(Box::pin(event_stream))
+    }
+
     async fn health_check(&self) -> Result<bool> {
         let request = LlmRequest {
             model: self.model.clone(),
@@ -319,6 +424,191 @@ struct OpenAiChoice {
 struct OpenAiUsage {
     prompt_tokens: u32,
     completion_tokens: u32,
+}
+
+// --- OpenAI Streaming Wire Types (private) ---
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamChunk {
+    choices: Vec<OpenAiStreamChoice>,
+    #[allow(dead_code)]
+    model: Option<String>,
+    usage: Option<OpenAiUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamChoice {
+    #[allow(dead_code)]
+    index: usize,
+    delta: OpenAiStreamDelta,
+    finish_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamDelta {
+    #[allow(dead_code)]
+    role: Option<String>,
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<OpenAiStreamToolCallDelta>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamToolCallDelta {
+    index: usize,
+    id: Option<String>,
+    #[allow(dead_code)]
+    r#type: Option<String>,
+    function: Option<OpenAiStreamFunctionDelta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiStreamFunctionDelta {
+    name: Option<String>,
+    arguments: Option<String>,
+}
+
+/// Wrapper to allow serializing a StreamEvent back into a synthetic SSE data line
+/// when a single chunk produces multiple events.
+struct SyntheticEvent(StreamEvent);
+
+impl serde::Serialize for SyntheticEvent {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        match &self.0 {
+            StreamEvent::TextDelta(text) => {
+                map.serialize_entry("_synthetic", "text_delta")?;
+                map.serialize_entry("text", text)?;
+            }
+            StreamEvent::ToolUseStart { index, id, name } => {
+                map.serialize_entry("_synthetic", "tool_use_start")?;
+                map.serialize_entry("index", index)?;
+                map.serialize_entry("id", id)?;
+                map.serialize_entry("name", name)?;
+            }
+            StreamEvent::InputJsonDelta(json) => {
+                map.serialize_entry("_synthetic", "input_json_delta")?;
+                map.serialize_entry("json", json)?;
+            }
+            StreamEvent::ContentBlockStop { index } => {
+                map.serialize_entry("_synthetic", "content_block_stop")?;
+                map.serialize_entry("index", index)?;
+            }
+            StreamEvent::MessageDelta { stop_reason, .. } => {
+                map.serialize_entry("_synthetic", "message_delta")?;
+                map.serialize_entry("stop_reason", stop_reason)?;
+            }
+            StreamEvent::MessageStop => {
+                map.serialize_entry("_synthetic", "message_stop")?;
+            }
+        }
+        map.end()
+    }
+}
+
+fn parse_synthetic_event(value: &serde_json::Value) -> Option<StreamEvent> {
+    let kind = value.get("_synthetic")?.as_str()?;
+    match kind {
+        "text_delta" => Some(StreamEvent::TextDelta(
+            value.get("text")?.as_str()?.to_string(),
+        )),
+        "tool_use_start" => Some(StreamEvent::ToolUseStart {
+            index: value.get("index")?.as_u64()? as usize,
+            id: value.get("id")?.as_str()?.to_string(),
+            name: value.get("name")?.as_str()?.to_string(),
+        }),
+        "input_json_delta" => Some(StreamEvent::InputJsonDelta(
+            value.get("json")?.as_str()?.to_string(),
+        )),
+        "content_block_stop" => Some(StreamEvent::ContentBlockStop {
+            index: value.get("index")?.as_u64()? as usize,
+        }),
+        "message_delta" => Some(StreamEvent::MessageDelta {
+            stop_reason: value
+                .get("stop_reason")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            usage: None,
+        }),
+        "message_stop" => Some(StreamEvent::MessageStop),
+        _ => None,
+    }
+}
+
+/// Parse an OpenAI streaming chunk into one or more StreamEvents.
+fn parse_stream_chunk(data: &str) -> Option<Vec<StreamEvent>> {
+    let value: serde_json::Value = serde_json::from_str(data).ok()?;
+
+    // Handle synthetic events we pushed back into the buffer
+    if value.get("_synthetic").is_some() {
+        return parse_synthetic_event(&value).map(|e| vec![e]);
+    }
+
+    let chunk: OpenAiStreamChunk = serde_json::from_value(value).ok()?;
+
+    let choice = chunk.choices.first()?;
+    let mut events = Vec::new();
+
+    // Text content delta
+    if let Some(content) = &choice.delta.content
+        && !content.is_empty()
+    {
+        events.push(StreamEvent::TextDelta(content.clone()));
+    }
+
+    // Tool call deltas
+    if let Some(tool_calls) = &choice.delta.tool_calls {
+        for tc in tool_calls {
+            // First chunk for a tool call includes id and name
+            if let Some(id) = &tc.id {
+                let name = tc
+                    .function
+                    .as_ref()
+                    .and_then(|f| f.name.as_ref())
+                    .cloned()
+                    .unwrap_or_default();
+                events.push(StreamEvent::ToolUseStart {
+                    index: tc.index,
+                    id: id.clone(),
+                    name,
+                });
+            }
+
+            // Argument fragments
+            if let Some(func) = &tc.function
+                && let Some(args) = &func.arguments
+                && !args.is_empty()
+            {
+                events.push(StreamEvent::InputJsonDelta(args.clone()));
+            }
+        }
+    }
+
+    // finish_reason signals end of generation
+    if let Some(reason) = &choice.finish_reason {
+        let stop_reason = match reason.as_str() {
+            "stop" => "end_turn".to_string(),
+            "tool_calls" => "tool_use".to_string(),
+            other => other.to_string(),
+        };
+
+        let usage = chunk.usage.map(|u| Usage {
+            input_tokens: u.prompt_tokens,
+            output_tokens: u.completion_tokens,
+        });
+
+        events.push(StreamEvent::MessageDelta {
+            stop_reason: Some(stop_reason),
+            usage,
+        });
+    }
+
+    if events.is_empty() {
+        None
+    } else {
+        Some(events)
+    }
 }
 
 // --- Conversion ---
@@ -544,6 +834,51 @@ mod tests {
             provider.endpoint(),
             "https://api.example.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn parses_text_stream_chunk() {
+        let data = r#"{"id":"chatcmpl-abc","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}"#;
+        let events = parse_stream_chunk(data).unwrap();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], StreamEvent::TextDelta(t) if t == "Hello"));
+    }
+
+    #[test]
+    fn parses_tool_call_stream_chunks() {
+        // First chunk: tool_use start with id and name
+        let data1 = r#"{"id":"chatcmpl-abc","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"bash","arguments":""}}]},"finish_reason":null}]}"#;
+        let events1 = parse_stream_chunk(data1).unwrap();
+        assert!(matches!(&events1[0], StreamEvent::ToolUseStart { id, name, .. } if id == "call_123" && name == "bash"));
+
+        // Subsequent chunk: argument fragment
+        let data2 = r#"{"id":"chatcmpl-abc","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"cmd\":"}}]},"finish_reason":null}]}"#;
+        let events2 = parse_stream_chunk(data2).unwrap();
+        assert!(matches!(&events2[0], StreamEvent::InputJsonDelta(s) if s == r#"{"cmd":"#));
+    }
+
+    #[test]
+    fn parses_finish_reason_stop() {
+        let data = r#"{"id":"chatcmpl-abc","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#;
+        let events = parse_stream_chunk(data).unwrap();
+        assert!(
+            matches!(&events[0], StreamEvent::MessageDelta { stop_reason: Some(r), .. } if r == "end_turn")
+        );
+    }
+
+    #[test]
+    fn parses_finish_reason_tool_calls() {
+        let data = r#"{"id":"chatcmpl-abc","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}"#;
+        let events = parse_stream_chunk(data).unwrap();
+        assert!(
+            matches!(&events[0], StreamEvent::MessageDelta { stop_reason: Some(r), .. } if r == "tool_use")
+        );
+    }
+
+    #[test]
+    fn done_sentinel_returns_none() {
+        // [DONE] is not valid JSON, so parse_stream_chunk returns None
+        assert!(parse_stream_chunk("[DONE]").is_none());
     }
 
     #[test]
