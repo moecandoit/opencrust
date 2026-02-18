@@ -93,6 +93,8 @@ enum PluginCommands {
     List,
     /// Install a plugin
     Install { path: String },
+    /// Remove a plugin
+    Remove { name: String },
 }
 
 #[derive(Subcommand)]
@@ -273,17 +275,21 @@ async fn main() -> Result<()> {
                         config_loader.config_dir().join("plugins"),
                     );
                     match loader.discover() {
-                        Ok(manifests) => {
+                        Ok(plugins) => {
                             println!("Installed plugins:");
-                            if manifests.is_empty() {
+                            if plugins.is_empty() {
                                 println!("  (none)");
                             }
-                            for m in manifests {
+                            for p in plugins {
+                                let caps = p.capabilities().iter()
+                                    .map(|c| format!("{:?}", c))
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
                                 println!(
-                                    "  {} v{} - {}",
-                                    m.name,
-                                    m.version,
-                                    m.description.unwrap_or_default()
+                                    "  {} - {} [caps: {}]",
+                                    p.name(),
+                                    p.description(),
+                                    caps
                                 );
                             }
                         }
@@ -291,7 +297,74 @@ async fn main() -> Result<()> {
                     }
                 }
                 PluginCommands::Install { path } => {
-                    println!("TODO: install plugin from {}", path);
+                    let source_path = PathBuf::from(path);
+                    if !source_path.exists() {
+                         println!("Source path not found: {}", source_path.display());
+                         return Ok(());
+                    }
+
+                    let manifest_path = if source_path.is_dir() {
+                        source_path.join("plugin.toml")
+                    } else {
+                        if source_path.file_name().unwrap_or_default() == "plugin.toml" {
+                            source_path.clone()
+                        } else {
+                             println!("Install expects a directory with plugin.toml or path to plugin.toml");
+                             return Ok(());
+                        }
+                    };
+
+                    if !manifest_path.exists() {
+                        println!("plugin.toml not found at {}", manifest_path.display());
+                        return Ok(());
+                    }
+
+                    let manifest = match opencrust_plugins::PluginManifest::from_file(&manifest_path) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            println!("Invalid manifest: {}", e);
+                            return Ok(());
+                        }
+                    };
+
+                    let plugins_dir = config_loader.config_dir().join("plugins");
+                    let target_dir = plugins_dir.join(&manifest.plugin.name);
+
+                    if target_dir.exists() {
+                        println!("Plugin '{}' already installed. Use remove first.", manifest.plugin.name);
+                        return Ok(());
+                    }
+
+                    std::fs::create_dir_all(&target_dir)?;
+
+                    std::fs::copy(&manifest_path, target_dir.join("plugin.toml"))?;
+
+                    let source_dir = manifest_path.parent().unwrap();
+                    let wasm_name = format!("{}.wasm", manifest.plugin.name);
+                    let wasm_source = source_dir.join(&wasm_name);
+                    let wasm_generic = source_dir.join("plugin.wasm");
+
+                    if wasm_source.exists() {
+                        std::fs::copy(&wasm_source, target_dir.join(&wasm_name))?;
+                    } else if wasm_generic.exists() {
+                        std::fs::copy(&wasm_generic, target_dir.join("plugin.wasm"))?;
+                    } else {
+                         println!("Warning: WASM file not found in source directory. Copied only manifest.");
+                    }
+
+                    println!("Installed plugin: {}", manifest.plugin.name);
+                }
+                PluginCommands::Remove { name } => {
+                    let plugins_dir = config_loader.config_dir().join("plugins");
+                    let target_dir = plugins_dir.join(&name);
+
+                    if !target_dir.exists() {
+                        println!("Plugin '{}' not found.", name);
+                        return Ok(());
+                    }
+
+                    std::fs::remove_dir_all(&target_dir)?;
+                    println!("Removed plugin: {}", name);
                 }
             }
         }
