@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use opencrust_common::{Error, Result};
 use std::path::PathBuf;
 
-use super::{Tool, ToolOutput};
+use super::{Tool, ToolContext, ToolOutput};
 
 const MAX_WRITE_BYTES: usize = 1024 * 1024; // 1MB
 
@@ -70,7 +70,11 @@ impl Tool for FileWriteTool {
         })
     }
 
-    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput> {
+    async fn execute(
+        &self,
+        _context: &ToolContext,
+        input: serde_json::Value,
+    ) -> Result<ToolOutput> {
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
@@ -122,11 +126,18 @@ mod tests {
         let file_path = dir.path().join("test.txt");
 
         let tool = FileWriteTool::new(None);
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
         let output = tool
-            .execute(serde_json::json!({
-                "path": file_path.to_str().unwrap(),
-                "content": "hello world"
-            }))
+            .execute(
+                &ctx,
+                serde_json::json!({
+                    "path": file_path.to_str().unwrap(),
+                    "content": "hello world"
+                }),
+            )
             .await
             .unwrap();
 
@@ -138,9 +149,13 @@ mod tests {
     #[tokio::test]
     async fn returns_error_on_missing_params() {
         let tool = FileWriteTool::new(None);
-        assert!(tool.execute(serde_json::json!({})).await.is_err());
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
+        assert!(tool.execute(&ctx, serde_json::json!({})).await.is_err());
         assert!(
-            tool.execute(serde_json::json!({"path": "/tmp/test"}))
+            tool.execute(&ctx, serde_json::json!({"path": "/tmp/test"}))
                 .await
                 .is_err()
         );

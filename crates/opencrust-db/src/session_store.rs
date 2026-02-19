@@ -64,7 +64,20 @@ impl SessionStore {
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_messages_session
-                    ON messages(session_id, timestamp);",
+                    ON messages(session_id, timestamp);
+
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    execute_at TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_tasks_execute_at
+                    ON scheduled_tasks(execute_at) WHERE status = 'pending';",
             )
             .map_err(|e| Error::Database(format!("migration failed: {e}")))?;
 
@@ -167,6 +180,92 @@ impl SessionStore {
         messages.reverse();
         Ok(messages)
     }
+
+    /// Schedule a task for future execution.
+    pub fn schedule_task(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        execute_at: chrono::DateTime<chrono::Utc>,
+        payload: &str,
+    ) -> Result<String> {
+        let task_id = uuid::Uuid::new_v4().to_string();
+        self.conn
+            .execute(
+                "INSERT INTO scheduled_tasks (id, session_id, user_id, execute_at, payload, status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+                params![
+                    task_id,
+                    session_id,
+                    user_id,
+                    execute_at.to_rfc3339(),
+                    payload
+                ],
+            )
+            .map_err(|e| Error::Database(format!("failed to schedule task: {e}")))?;
+        Ok(task_id)
+    }
+
+    /// Poll for pending tasks that are due for execution.
+    pub fn poll_due_tasks(&self) -> Result<Vec<ScheduledTask>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT t.id, t.session_id, s.channel_id, t.user_id, t.execute_at, t.payload, s.metadata
+                 FROM scheduled_tasks t
+                 JOIN sessions s ON t.session_id = s.id
+                 WHERE t.status = 'pending' AND datetime(t.execute_at) <= datetime('now')
+                 ORDER BY t.execute_at ASC
+                 LIMIT 10",
+            )
+            .map_err(|e| Error::Database(format!("failed to prepare poll query: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let execute_at_raw: String = row.get(4)?;
+                let metadata_raw: String = row.get(6)?;
+                Ok(ScheduledTask {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    channel_id: row.get(2)?,
+                    user_id: row.get(3)?,
+                    execute_at: parse_timestamp(&execute_at_raw),
+                    payload: row.get(5)?,
+                    session_metadata: serde_json::from_str(&metadata_raw)
+                        .unwrap_or(serde_json::Value::Null),
+                })
+            })
+            .map_err(|e| Error::Database(format!("failed to poll tasks: {e}")))?;
+
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(row.map_err(|e| Error::Database(format!("failed to read task row: {e}")))?);
+        }
+        Ok(tasks)
+    }
+
+    /// Mark a scheduled task as completed.
+    pub fn complete_task(&self, task_id: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE scheduled_tasks SET status = 'completed' WHERE id = ?1",
+                params![task_id],
+            )
+            .map_err(|e| Error::Database(format!("failed to complete task: {e}")))?;
+        Ok(())
+    }
+}
+
+/// Represents a scheduled background task.
+#[derive(Debug, Clone)]
+pub struct ScheduledTask {
+    pub id: String,
+    pub session_id: String,
+    pub channel_id: String,
+    pub user_id: String,
+    pub execute_at: chrono::DateTime<chrono::Utc>,
+    pub payload: String,
+    pub session_metadata: serde_json::Value,
 }
 
 fn parse_timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
@@ -178,6 +277,7 @@ fn parse_timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
 #[cfg(test)]
 mod tests {
     use super::SessionStore;
+    use chrono::Duration;
 
     #[test]
     fn upsert_and_load_recent_messages_round_trip() {
@@ -221,5 +321,56 @@ mod tests {
         assert_eq!(messages[0].content, "hello");
         assert_eq!(messages[1].direction, "assistant");
         assert_eq!(messages[1].content, "hi there");
+    }
+
+    #[test]
+    fn schedule_and_poll_tasks() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        let session_id = "session-task";
+
+        // Ensure session exists for JOIN
+        store
+            .upsert_session(
+                session_id,
+                "discord",
+                "user-1",
+                &serde_json::json!({"foo":"bar"}),
+            )
+            .expect("upsert session");
+
+        // Schedule a task in the past (immediately due)
+        let due_time = chrono::Utc::now() - Duration::minutes(1);
+        let task_id = store
+            .schedule_task(session_id, "user-1", due_time, "check logs")
+            .expect("schedule task should succeed");
+
+        // Schedule a future task (not due)
+        store
+            .schedule_task(
+                session_id,
+                "user-1",
+                chrono::Utc::now() + Duration::minutes(10),
+                "future",
+            )
+            .expect("schedule future task should succeed");
+
+        let due = store.poll_due_tasks().expect("poll should succeed");
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].id, task_id);
+        assert_eq!(due[0].channel_id, "discord"); // Verified via JOIN
+        assert_eq!(due[0].payload, "check logs");
+        assert_eq!(
+            due[0].session_metadata.get("foo").and_then(|v| v.as_str()),
+            Some("bar")
+        );
+
+        store
+            .complete_task(&task_id)
+            .expect("complete should succeed");
+
+        let due_after = store
+            .poll_due_tasks()
+            .expect("poll after complete should succeed");
+        assert_eq!(due_after.len(), 0);
     }
 }

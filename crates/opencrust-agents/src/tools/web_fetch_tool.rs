@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use opencrust_common::{Error, Result};
 use std::time::Duration;
 
-use super::{Tool, ToolOutput};
+use super::{Tool, ToolContext, ToolOutput};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024; // 1MB
@@ -56,7 +56,11 @@ impl Tool for WebFetchTool {
         })
     }
 
-    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput> {
+    async fn execute(
+        &self,
+        _context: &ToolContext,
+        input: serde_json::Value,
+    ) -> Result<ToolOutput> {
         let url = input
             .get("url")
             .and_then(|v| v.as_str())
@@ -111,7 +115,11 @@ mod tests {
     fn returns_error_on_missing_url() {
         let tool = WebFetchTool::new(None);
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(tool.execute(serde_json::json!({})));
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
+        let result = rt.block_on(tool.execute(&ctx, serde_json::json!({})));
         assert!(result.is_err());
     }
 }

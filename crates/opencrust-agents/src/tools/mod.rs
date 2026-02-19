@@ -1,16 +1,25 @@
 pub mod bash_tool;
 pub mod file_read_tool;
 pub mod file_write_tool;
+pub mod schedule;
 pub mod web_fetch_tool;
 
 pub use bash_tool::BashTool;
 pub use file_read_tool::FileReadTool;
 pub use file_write_tool::FileWriteTool;
+pub use schedule::ScheduleHeartbeat;
 pub use web_fetch_tool::WebFetchTool;
 
 use async_trait::async_trait;
 use opencrust_common::Result;
 use serde::{Deserialize, Serialize};
+
+/// Context passed to tools during execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolContext {
+    pub session_id: String,
+    pub user_id: Option<String>,
+}
 
 /// Trait for tools that agents can invoke (bash, browser, file operations, etc.).
 #[async_trait]
@@ -18,7 +27,7 @@ pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn input_schema(&self) -> serde_json::Value;
-    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput>;
+    async fn execute(&self, context: &ToolContext, input: serde_json::Value) -> Result<ToolOutput>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

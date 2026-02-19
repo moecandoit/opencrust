@@ -8,7 +8,7 @@ use rmcp::model::{CallToolRequestParams, RawContent};
 use rmcp::service::{Peer, RoleClient};
 use serde_json::Value;
 
-use crate::tools::{Tool, ToolOutput};
+use crate::tools::{Tool, ToolContext, ToolOutput};
 
 /// Bridges a single MCP server tool into the opencrust `Tool` trait.
 pub struct McpTool {
@@ -61,7 +61,7 @@ impl Tool for McpTool {
         self.schema.clone()
     }
 
-    async fn execute(&self, input: Value) -> Result<ToolOutput> {
+    async fn execute(&self, _context: &ToolContext, input: Value) -> Result<ToolOutput> {
         let arguments = match input {
             Value::Object(map) => Some(map),
             Value::Null => None,

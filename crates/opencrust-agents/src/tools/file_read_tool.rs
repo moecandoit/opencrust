@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use opencrust_common::{Error, Result};
 use std::path::PathBuf;
 
-use super::{Tool, ToolOutput};
+use super::{Tool, ToolContext, ToolOutput};
 
 const MAX_READ_BYTES: u64 = 1024 * 1024; // 1MB
 
@@ -63,7 +63,11 @@ impl Tool for FileReadTool {
         })
     }
 
-    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput> {
+    async fn execute(
+        &self,
+        _context: &ToolContext,
+        input: serde_json::Value,
+    ) -> Result<ToolOutput> {
         let path_str = input
             .get("path")
             .and_then(|v| v.as_str())
@@ -104,8 +108,15 @@ mod tests {
         write!(tmp, "hello world").unwrap();
 
         let tool = FileReadTool::new(None);
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
         let output = tool
-            .execute(serde_json::json!({"path": tmp.path().to_str().unwrap()}))
+            .execute(
+                &ctx,
+                serde_json::json!({"path": tmp.path().to_str().unwrap()}),
+            )
             .await
             .unwrap();
         assert!(!output.is_error);
@@ -115,8 +126,12 @@ mod tests {
     #[tokio::test]
     async fn returns_error_for_missing_file() {
         let tool = FileReadTool::new(None);
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
         let result = tool
-            .execute(serde_json::json!({"path": "/nonexistent/file.txt"}))
+            .execute(&ctx, serde_json::json!({"path": "/nonexistent/file.txt"}))
             .await;
         assert!(result.is_err());
     }
@@ -124,7 +139,11 @@ mod tests {
     #[tokio::test]
     async fn returns_error_on_missing_param() {
         let tool = FileReadTool::new(None);
-        let result = tool.execute(serde_json::json!({})).await;
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
+        let result = tool.execute(&ctx, serde_json::json!({})).await;
         assert!(result.is_err());
     }
 }

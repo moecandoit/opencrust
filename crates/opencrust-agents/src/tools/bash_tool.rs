@@ -3,7 +3,7 @@ use opencrust_common::{Error, Result};
 use std::time::Duration;
 use tokio::process::Command;
 
-use super::{Tool, ToolOutput};
+use super::{Tool, ToolContext, ToolOutput};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const MAX_OUTPUT_BYTES: usize = 32 * 1024;
@@ -49,7 +49,11 @@ impl Tool for BashTool {
         })
     }
 
-    async fn execute(&self, input: serde_json::Value) -> Result<ToolOutput> {
+    async fn execute(
+        &self,
+        _context: &ToolContext,
+        input: serde_json::Value,
+    ) -> Result<ToolOutput> {
         let command_str = input
             .get("command")
             .and_then(|v| v.as_str())
@@ -121,8 +125,12 @@ mod tests {
     async fn executes_simple_command() {
         let tool = BashTool::new(None);
         // echo works on both
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
         let output = tool
-            .execute(serde_json::json!({"command": "echo hello"}))
+            .execute(&ctx, serde_json::json!({"command": "echo hello"}))
             .await
             .unwrap();
         assert!(!output.is_error);
@@ -137,8 +145,12 @@ mod tests {
         } else {
             "false"
         };
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
         let output = tool
-            .execute(serde_json::json!({"command": cmd}))
+            .execute(&ctx, serde_json::json!({"command": cmd}))
             .await
             .unwrap();
         assert!(output.is_error);
@@ -147,7 +159,11 @@ mod tests {
     #[tokio::test]
     async fn returns_error_on_missing_command() {
         let tool = BashTool::new(None);
-        let result = tool.execute(serde_json::json!({})).await;
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
+        let result = tool.execute(&ctx, serde_json::json!({})).await;
         assert!(result.is_err());
     }
 
@@ -159,8 +175,12 @@ mod tests {
         } else {
             "echo err >&2"
         };
+        let ctx = ToolContext {
+            session_id: "test".into(),
+            user_id: None,
+        };
         let output = tool
-            .execute(serde_json::json!({"command": cmd}))
+            .execute(&ctx, serde_json::json!({"command": cmd}))
             .await
             .unwrap();
         assert!(output.content.contains("err"));

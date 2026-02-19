@@ -12,7 +12,7 @@ use crate::providers::{
     ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, MessagePart, StreamEvent,
     ToolDefinition,
 };
-use crate::tools::{Tool, ToolOutput};
+use crate::tools::{Tool, ToolContext, ToolOutput};
 
 /// Maximum number of tool-use round-trips before the loop is forcibly stopped.
 const MAX_TOOL_ITERATIONS: usize = 10;
@@ -319,9 +319,13 @@ impl AgentRuntime {
             let mut tool_results = Vec::new();
             for block in &response.content {
                 if let ContentBlock::ToolUse { id, name, input } = block {
+                    let context = ToolContext {
+                        session_id: session_id.to_string(),
+                        user_id: user_id.map(|s| s.to_string()),
+                    };
                     let output = match self.find_tool(name) {
                         Some(tool) => tool
-                            .execute(input.clone())
+                            .execute(&context, input.clone())
                             .await
                             .unwrap_or_else(|e| ToolOutput::error(e.to_string())),
                         None => ToolOutput::error(format!("unknown tool: {}", name)),
@@ -517,9 +521,13 @@ impl AgentRuntime {
                     for (id, name, input_json) in &tool_uses {
                         let input: serde_json::Value =
                             serde_json::from_str(input_json).unwrap_or_default();
+                        let context = ToolContext {
+                            session_id: session_id.to_string(),
+                            user_id: user_id.map(|s| s.to_string()),
+                        };
                         let output = match self.find_tool(name) {
                             Some(tool) => tool
-                                .execute(input)
+                                .execute(&context, input)
                                 .await
                                 .unwrap_or_else(|e| ToolOutput::error(e.to_string())),
                             None => ToolOutput::error(format!("unknown tool: {}", name)),
@@ -579,9 +587,13 @@ impl AgentRuntime {
                     let mut tool_results = Vec::new();
                     for block in &response.content {
                         if let ContentBlock::ToolUse { id, name, input } = block {
+                            let context = ToolContext {
+                                session_id: session_id.to_string(),
+                                user_id: user_id.map(|s| s.to_string()),
+                            };
                             let output = match self.find_tool(name) {
                                 Some(tool) => tool
-                                    .execute(input.clone())
+                                    .execute(&context, input.clone())
                                     .await
                                     .unwrap_or_else(|e| ToolOutput::error(e.to_string())),
                                 None => ToolOutput::error(format!("unknown tool: {}", name)),

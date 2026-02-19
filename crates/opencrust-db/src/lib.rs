@@ -7,5 +7,5 @@ pub use memory_store::{
     CompactionReport, MemoryEntry, MemoryProvider, MemoryRole, MemoryStore, NewMemoryEntry,
     RecallQuery, SessionContext,
 };
-pub use session_store::SessionStore;
+pub use session_store::{ScheduledTask, SessionStore};
 pub use vector_store::VectorStore;

@@ -18,7 +18,10 @@ pub use providers::{
     StreamEvent, ToolDefinition,
 };
 pub use runtime::AgentRuntime;
-pub use tools::{BashTool, FileReadTool, FileWriteTool, Tool, ToolOutput, WebFetchTool};
+pub use tools::{
+    BashTool, FileReadTool, FileWriteTool, ScheduleHeartbeat, Tool, ToolContext, ToolOutput,
+    WebFetchTool,
+};
 
 #[cfg(feature = "mcp")]
 pub use mcp::McpManager;
