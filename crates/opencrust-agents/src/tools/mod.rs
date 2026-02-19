@@ -19,6 +19,10 @@ use serde::{Deserialize, Serialize};
 pub struct ToolContext {
     pub session_id: String,
     pub user_id: Option<String>,
+    /// When true, this execution is from a scheduled heartbeat.
+    /// Used to prevent recursive self-scheduling.
+    #[serde(default)]
+    pub is_heartbeat: bool,
 }
 
 /// Trait for tools that agents can invoke (bash, browser, file operations, etc.).

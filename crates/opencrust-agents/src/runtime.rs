@@ -227,7 +227,6 @@ impl AgentRuntime {
     }
 
     /// Same as `process_message` but includes continuity/user context for shared memory.
-    #[instrument(skip(self, conversation_history), fields(provider_id, continuity_key = ?continuity_key))]
     pub async fn process_message_with_context(
         &self,
         session_id: &str,
@@ -235,6 +234,48 @@ impl AgentRuntime {
         conversation_history: &[ChatMessage],
         continuity_key: Option<&str>,
         user_id: Option<&str>,
+    ) -> Result<String> {
+        self.process_message_impl(
+            session_id,
+            user_text,
+            conversation_history,
+            continuity_key,
+            user_id,
+            false,
+        )
+        .await
+    }
+
+    /// Process a scheduled heartbeat message. Tools receive `is_heartbeat = true`
+    /// so that recursive scheduling is blocked.
+    pub async fn process_heartbeat(
+        &self,
+        session_id: &str,
+        user_text: &str,
+        conversation_history: &[ChatMessage],
+        continuity_key: Option<&str>,
+        user_id: Option<&str>,
+    ) -> Result<String> {
+        self.process_message_impl(
+            session_id,
+            user_text,
+            conversation_history,
+            continuity_key,
+            user_id,
+            true,
+        )
+        .await
+    }
+
+    #[instrument(skip(self, conversation_history), fields(provider_id, continuity_key = ?continuity_key))]
+    async fn process_message_impl(
+        &self,
+        session_id: &str,
+        user_text: &str,
+        conversation_history: &[ChatMessage],
+        continuity_key: Option<&str>,
+        user_id: Option<&str>,
+        is_heartbeat: bool,
     ) -> Result<String> {
         let provider = self
             .default_provider()
@@ -322,6 +363,7 @@ impl AgentRuntime {
                     let context = ToolContext {
                         session_id: session_id.to_string(),
                         user_id: user_id.map(|s| s.to_string()),
+                        is_heartbeat,
                     };
                     let output = match self.find_tool(name) {
                         Some(tool) => tool
@@ -524,6 +566,7 @@ impl AgentRuntime {
                         let context = ToolContext {
                             session_id: session_id.to_string(),
                             user_id: user_id.map(|s| s.to_string()),
+                            is_heartbeat: false,
                         };
                         let output = match self.find_tool(name) {
                             Some(tool) => tool
@@ -590,6 +633,7 @@ impl AgentRuntime {
                             let context = ToolContext {
                                 session_id: session_id.to_string(),
                                 user_id: user_id.map(|s| s.to_string()),
+                                is_heartbeat: false,
                             };
                             let output = match self.find_tool(name) {
                                 Some(tool) => tool

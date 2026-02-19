@@ -111,6 +111,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
+            is_heartbeat: false,
         };
         let output = tool
             .execute(
@@ -129,6 +130,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
+            is_heartbeat: false,
         };
         let result = tool
             .execute(&ctx, serde_json::json!({"path": "/nonexistent/file.txt"}))
@@ -142,6 +144,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
+            is_heartbeat: false,
         };
         let result = tool.execute(&ctx, serde_json::json!({})).await;
         assert!(result.is_err());

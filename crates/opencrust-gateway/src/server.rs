@@ -240,98 +240,112 @@ async fn run_scheduler(state: &AppState) -> Result<()> {
     info!("scheduler executing {} due tasks", tasks.len());
 
     for task in tasks {
-        let channel_type = &task.channel_id;
-
-        // Construct System Message to trigger agent
-        // Note: System messages don't usually map to a user, but we use the original user for context.
-        let message = Message {
-            id: uuid::Uuid::new_v4().to_string(),
-            session_id: SessionId::from_string(&task.session_id),
-            channel_id: ChannelId::from_string(channel_type),
-            user_id: UserId::from_string(&task.user_id),
-            direction: MessageDirection::Incoming,
-            content: MessageContent::System(task.payload.clone()),
-            timestamp: chrono::Utc::now(),
-            metadata: task.session_metadata.clone(),
-        };
-
-        // 1. Persist system message to history so agent has context
-        {
+        if let Err(e) = execute_scheduled_task(state, store_mutex, &task).await {
+            tracing::error!("Scheduled task {} failed: {e} — marking as failed", task.id);
             let store = store_mutex.lock().await;
-            store.append_message(
-                &task.session_id,
-                "system",
-                &task.payload,
-                message.timestamp,
-                &task.session_metadata,
-            )?;
-        }
-
-        // 2. Hydrate session history and Invoke Agent Runtime
-        state
-            .hydrate_session_history(
-                &task.session_id,
-                Some(channel_type.as_str()),
-                Some(task.user_id.as_str()),
-            )
-            .await;
-
-        let history = state.session_history(&task.session_id);
-        let continuity_key = state
-            .continuity_key(Some(task.user_id.as_str()))
-            .map(|k| k.as_str().to_string());
-
-        let response_text = state
-            .agents
-            .process_message_with_context(
-                &task.session_id,
-                &task.payload,
-                &history,
-                continuity_key.as_deref(),
-                Some(task.user_id.as_str()),
-            )
-            .await?;
-
-        let response_msg = Message {
-            id: uuid::Uuid::new_v4().to_string(),
-            session_id: SessionId::from_string(&task.session_id),
-            channel_id: ChannelId::from_string(channel_type),
-            user_id: UserId::from_string("genesis"),
-            direction: MessageDirection::Outgoing,
-            content: MessageContent::Text(response_text.clone()),
-            timestamp: chrono::Utc::now(),
-            metadata: task.session_metadata.clone(),
-        };
-
-        // 3. Persist assistant response regardless of outbound channel availability.
-        {
-            let store = store_mutex.lock().await;
-            store.append_message(
-                &task.session_id,
-                "assistant",
-                &response_text,
-                response_msg.timestamp,
-                &task.session_metadata,
-            )?;
-        }
-
-        // 4. Best-effort delivery to channel adapter.
-        if let Some(channel) = state.channels.get(channel_type.as_str()) {
-            if let Err(e) = channel.send_message(&response_msg).await {
-                tracing::error!("Failed to send scheduled response: {e}");
+            if let Err(fe) = store.fail_task(&task.id) {
+                tracing::error!("Failed to mark task {} as failed: {fe}", task.id);
             }
-        } else {
-            tracing::warn!(
-                "Scheduled response persisted but no channel adapter registered for: {}",
-                channel_type
-            );
-        }
-
-        // 5. Complete Task
-        {
-            let store = store_mutex.lock().await;
-            store.complete_task(&task.id)?;
         }
     }
+    Ok(())
+}
+
+async fn execute_scheduled_task(
+    state: &AppState,
+    store_mutex: &Arc<Mutex<SessionStore>>,
+    task: &opencrust_db::ScheduledTask,
+) -> Result<()> {
+    let channel_type = &task.channel_id;
+
+    let message = Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        session_id: SessionId::from_string(&task.session_id),
+        channel_id: ChannelId::from_string(channel_type),
+        user_id: UserId::from_string(&task.user_id),
+        direction: MessageDirection::Incoming,
+        content: MessageContent::System(task.payload.clone()),
+        timestamp: chrono::Utc::now(),
+        metadata: task.session_metadata.clone(),
+    };
+
+    // 1. Persist system message to history so agent has context
+    {
+        let store = store_mutex.lock().await;
+        store.append_message(
+            &task.session_id,
+            "system",
+            &task.payload,
+            message.timestamp,
+            &task.session_metadata,
+        )?;
+    }
+
+    // 2. Hydrate session history and invoke agent runtime
+    state
+        .hydrate_session_history(
+            &task.session_id,
+            Some(channel_type.as_str()),
+            Some(task.user_id.as_str()),
+        )
+        .await;
+
+    let history = state.session_history(&task.session_id);
+    let continuity_key = state
+        .continuity_key(Some(task.user_id.as_str()))
+        .map(|k| k.as_str().to_string());
+
+    let response_text = state
+        .agents
+        .process_heartbeat(
+            &task.session_id,
+            &task.payload,
+            &history,
+            continuity_key.as_deref(),
+            Some(task.user_id.as_str()),
+        )
+        .await?;
+
+    let response_msg = Message {
+        id: uuid::Uuid::new_v4().to_string(),
+        session_id: SessionId::from_string(&task.session_id),
+        channel_id: ChannelId::from_string(channel_type),
+        user_id: UserId::from_string("genesis"),
+        direction: MessageDirection::Outgoing,
+        content: MessageContent::Text(response_text.clone()),
+        timestamp: chrono::Utc::now(),
+        metadata: task.session_metadata.clone(),
+    };
+
+    // 3. Persist assistant response regardless of outbound channel availability.
+    {
+        let store = store_mutex.lock().await;
+        store.append_message(
+            &task.session_id,
+            "assistant",
+            &response_text,
+            response_msg.timestamp,
+            &task.session_metadata,
+        )?;
+    }
+
+    // 4. Best-effort delivery to channel adapter.
+    if let Some(channel) = state.channels.get(channel_type.as_str()) {
+        if let Err(e) = channel.send_message(&response_msg).await {
+            tracing::error!("Failed to send scheduled response: {e}");
+        }
+    } else {
+        tracing::warn!(
+            "Scheduled response persisted but no channel adapter registered for: {}",
+            channel_type
+        );
+    }
+
+    // 5. Complete task
+    {
+        let store = store_mutex.lock().await;
+        store.complete_task(&task.id)?;
+    }
+
     Ok(())
 }

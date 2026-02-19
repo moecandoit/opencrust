@@ -254,6 +254,30 @@ impl SessionStore {
             .map_err(|e| Error::Database(format!("failed to complete task: {e}")))?;
         Ok(())
     }
+
+    /// Mark a scheduled task as failed so it won't be retried.
+    pub fn fail_task(&self, task_id: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE scheduled_tasks SET status = 'failed' WHERE id = ?1",
+                params![task_id],
+            )
+            .map_err(|e| Error::Database(format!("failed to mark task as failed: {e}")))?;
+        Ok(())
+    }
+
+    /// Count pending scheduled tasks for a given session.
+    pub fn count_pending_tasks_for_session(&self, session_id: &str) -> Result<i64> {
+        let count: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM scheduled_tasks WHERE session_id = ?1 AND status = 'pending'",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Database(format!("failed to count pending tasks: {e}")))?;
+        Ok(count)
+    }
 }
 
 /// Represents a scheduled background task.
@@ -372,5 +396,46 @@ mod tests {
             .poll_due_tasks()
             .expect("poll after complete should succeed");
         assert_eq!(due_after.len(), 0);
+    }
+
+    #[test]
+    fn fail_task_prevents_re_poll() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let due_time = chrono::Utc::now() - Duration::minutes(1);
+        let task_id = store.schedule_task("s1", "u1", due_time, "boom").unwrap();
+
+        let due = store.poll_due_tasks().unwrap();
+        assert_eq!(due.len(), 1);
+
+        store.fail_task(&task_id).unwrap();
+
+        let due_after = store.poll_due_tasks().unwrap();
+        assert_eq!(due_after.len(), 0);
+    }
+
+    #[test]
+    fn count_pending_tasks_for_session() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+        store
+            .upsert_session("s2", "web", "u2", &serde_json::json!({}))
+            .unwrap();
+
+        let future = chrono::Utc::now() + Duration::minutes(10);
+
+        assert_eq!(store.count_pending_tasks_for_session("s1").unwrap(), 0);
+
+        store.schedule_task("s1", "u1", future, "a").unwrap();
+        store.schedule_task("s1", "u1", future, "b").unwrap();
+        store.schedule_task("s2", "u2", future, "c").unwrap();
+
+        assert_eq!(store.count_pending_tasks_for_session("s1").unwrap(), 2);
+        assert_eq!(store.count_pending_tasks_for_session("s2").unwrap(), 1);
     }
 }
