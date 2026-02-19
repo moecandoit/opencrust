@@ -283,10 +283,18 @@ fn normalize_scoped_path(
         ));
     }
 
-    let mut path = PathBuf::from(raw);
-    if path.is_relative() {
-        path = plugin_root.join(path);
+    let path = PathBuf::from(raw);
+
+    // Reject absolute paths — plugins must stay within their root.
+    if path.is_absolute() {
+        return Err(Error::Plugin(format!(
+            "absolute filesystem paths are not allowed in plugin permissions: {}",
+            path.display()
+        )));
     }
+
+    let path = plugin_root.join(path);
+
     if create_if_missing {
         std::fs::create_dir_all(&path).map_err(|e| {
             Error::Plugin(format!(
@@ -301,12 +309,50 @@ fn normalize_scoped_path(
             path.display()
         )));
     }
-    path.canonicalize().map_err(|e| {
+    let canonical = path.canonicalize().map_err(|e| {
         Error::Plugin(format!(
             "failed to canonicalize path {}: {e}",
             path.display()
         ))
-    })
+    })?;
+
+    // Boundary check: the canonical path must still be inside plugin_root.
+    let canonical_root = plugin_root.canonicalize().map_err(|e| {
+        Error::Plugin(format!(
+            "failed to canonicalize plugin root {}: {e}",
+            plugin_root.display()
+        ))
+    })?;
+
+    if !canonical.starts_with(&canonical_root) {
+        return Err(Error::Plugin(format!(
+            "path escapes plugin root: {} is outside {}",
+            canonical.display(),
+            canonical_root.display()
+        )));
+    }
+
+    Ok(canonical)
+}
+
+/// Returns `true` if the IP address is private, loopback, or link-local.
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()                          // 127.0.0.0/8
+                || v4.octets()[0] == 10                // 10.0.0.0/8
+                || (v4.octets()[0] == 172 && (16..=31).contains(&v4.octets()[1])) // 172.16.0.0/12
+                || (v4.octets()[0] == 192 && v4.octets()[1] == 168)              // 192.168.0.0/16
+                || (v4.octets()[0] == 169 && v4.octets()[1] == 254)              // 169.254.0.0/16
+                || v4.is_unspecified() // 0.0.0.0
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()                           // ::1
+                || v6.is_unspecified()                 // ::
+                || v6.segments()[0] & 0xfe00 == 0xfc00 // fc00::/7 (unique local)
+                || v6.segments()[0] & 0xffc0 == 0xfe80 // fe80::/10 (link-local)
+        }
+    }
 }
 
 fn resolve_allowlisted_ips(domains: &[String]) -> Result<HashSet<IpAddr>> {
@@ -326,6 +372,13 @@ fn resolve_allowlisted_ips(domains: &[String]) -> Result<HashSet<IpAddr>> {
 
         let mut resolved_any = false;
         for addr in resolved {
+            if is_private_ip(&addr.ip()) {
+                return Err(Error::Plugin(format!(
+                    "allowlisted domain '{domain}' resolved to private/loopback address {}, \
+                     which is blocked to prevent SSRF",
+                    addr.ip()
+                )));
+            }
             ips.insert(addr.ip());
             resolved_any = true;
         }
@@ -347,24 +400,79 @@ fn resolve_allowlisted_ips(domains: &[String]) -> Result<HashSet<IpAddr>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_scoped_path, resolve_allowlisted_ips};
+    use super::{is_private_ip, normalize_scoped_path, resolve_allowlisted_ips};
+    use std::net::IpAddr;
     use std::path::Path;
 
-    #[test]
-    fn resolve_allowlisted_ips_handles_localhost() {
-        let ips = resolve_allowlisted_ips(&["localhost".to_string()]).unwrap();
-        assert!(!ips.is_empty());
-    }
-
-    #[test]
-    fn normalize_scoped_path_creates_writable_path() {
+    fn temp_root(label: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("opencrust-plugin-test-{nanos}"));
+        let root = std::env::temp_dir().join(format!(
+            "opencrust-plugin-test-{label}-{}-{nanos}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn resolve_allowlisted_ips_rejects_localhost() {
+        let result = resolve_allowlisted_ips(&["localhost".to_string()]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("private/loopback") || err.contains("SSRF"));
+    }
+
+    #[test]
+    fn normalize_scoped_path_creates_writable_path() {
+        let root = temp_root("writable");
         let scoped = normalize_scoped_path(Path::new(&root), "rw-data", true).unwrap();
         assert!(scoped.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn path_traversal_blocked() {
+        let root = temp_root("traversal");
+        let result = normalize_scoped_path(&root, "../../../etc/passwd", false);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("escapes plugin root") || err.contains("does not exist"),
+            "unexpected error: {err}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn absolute_path_blocked() {
+        let root = temp_root("absolute");
+        let result = normalize_scoped_path(&root, "/etc/passwd", false);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("absolute filesystem paths are not allowed"),
+            "unexpected error: {err}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn private_ip_rejected() {
+        assert!(is_private_ip(&"127.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"172.16.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"192.168.1.1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"169.254.1.1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"::1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"fd00::1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(&"fe80::1".parse::<IpAddr>().unwrap()));
+        // Public IP should NOT be private
+        assert!(!is_private_ip(&"8.8.8.8".parse::<IpAddr>().unwrap()));
+        assert!(!is_private_ip(
+            &"2001:4860:4860::8888".parse::<IpAddr>().unwrap()
+        ));
     }
 }

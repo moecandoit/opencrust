@@ -345,3 +345,110 @@ impl AppState {
 }
 
 pub type SharedState = Arc<AppState>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opencrust_agents::AgentRuntime;
+    use opencrust_channels::ChannelRegistry;
+    use opencrust_config::AppConfig;
+
+    fn test_state() -> AppState {
+        AppState::new(
+            AppConfig::default(),
+            AgentRuntime::new(),
+            ChannelRegistry::new(),
+        )
+    }
+
+    #[test]
+    fn create_session_returns_unique_ids() {
+        let state = test_state();
+        let id1 = state.create_session();
+        let id2 = state.create_session();
+        assert_ne!(id1, id2);
+        assert_eq!(state.sessions.len(), 2);
+    }
+
+    #[test]
+    fn disconnect_and_resume_session_round_trip() {
+        let state = test_state();
+        let id = state.create_session();
+
+        // Initially connected
+        assert!(state.sessions.get(&id).unwrap().connected);
+
+        state.disconnect_session(&id);
+        assert!(!state.sessions.get(&id).unwrap().connected);
+
+        let resumed = state.resume_session(&id);
+        assert!(resumed);
+        assert!(state.sessions.get(&id).unwrap().connected);
+    }
+
+    #[test]
+    fn resume_nonexistent_session_returns_false() {
+        let state = test_state();
+        assert!(!state.resume_session("does-not-exist"));
+    }
+
+    #[test]
+    fn cleanup_expired_sessions_removes_only_disconnected_expired() {
+        let state = test_state();
+
+        // Create two sessions
+        let active_id = state.create_session();
+        let expired_id = state.create_session();
+
+        // Disconnect the expired session and backdate its last_active
+        state.disconnect_session(&expired_id);
+        if let Some(mut session) = state.sessions.get_mut(&expired_id) {
+            session.last_active = Instant::now() - Duration::from_secs(7200);
+        }
+
+        let removed = state.cleanup_expired_sessions();
+        assert_eq!(removed, 1);
+        assert!(state.sessions.contains_key(&active_id));
+        assert!(!state.sessions.contains_key(&expired_id));
+    }
+
+    #[test]
+    fn cleanup_does_not_remove_connected_sessions() {
+        let state = test_state();
+        let id = state.create_session();
+
+        // Backdate but keep connected
+        if let Some(mut session) = state.sessions.get_mut(&id) {
+            session.last_active = Instant::now() - Duration::from_secs(7200);
+        }
+
+        let removed = state.cleanup_expired_sessions();
+        assert_eq!(removed, 0);
+        assert!(state.sessions.contains_key(&id));
+    }
+
+    #[test]
+    fn session_history_returns_empty_for_unknown_session() {
+        let state = test_state();
+        let history = state.session_history("nonexistent");
+        assert!(history.is_empty());
+    }
+
+    #[test]
+    fn continuity_key_with_shared_continuity_enabled() {
+        let mut config = AppConfig::default();
+        config.memory.shared_continuity = true;
+        let state = AppState::new(config, AgentRuntime::new(), ChannelRegistry::new());
+        let key = state.continuity_key(Some("user1"));
+        assert_eq!(key, Some("bus:shared-global".to_string()));
+    }
+
+    #[test]
+    fn continuity_key_with_shared_continuity_disabled() {
+        let mut config = AppConfig::default();
+        config.memory.shared_continuity = false;
+        let state = AppState::new(config, AgentRuntime::new(), ChannelRegistry::new());
+        let key = state.continuity_key(Some("user1"));
+        assert_eq!(key, None);
+    }
+}

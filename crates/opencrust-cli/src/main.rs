@@ -8,6 +8,7 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::MakeWriter;
 
 #[derive(Parser)]
 #[command(
@@ -133,6 +134,62 @@ enum MigrateCommands {
     },
 }
 
+/// A writer that redacts sensitive tokens (API keys, bot tokens) from log output.
+struct RedactingWriter<W> {
+    inner: W,
+}
+
+impl RedactingWriter<std::io::Stderr> {
+    fn stderr() -> Self {
+        Self {
+            inner: std::io::stderr(),
+        }
+    }
+}
+
+impl<W: std::io::Write> std::io::Write for RedactingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let original = String::from_utf8_lossy(buf);
+        let redacted = redact_secrets(&original);
+        self.inner.write_all(redacted.as_bytes())?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl<'a> MakeWriter<'a> for RedactingWriter<std::io::Stderr> {
+    type Writer = RedactingWriter<std::io::Stderr>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        RedactingWriter {
+            inner: std::io::stderr(),
+        }
+    }
+}
+
+/// Replace known API key patterns with `[REDACTED]`.
+fn redact_secrets(input: &str) -> String {
+    // Patterns: Anthropic, OpenAI, Slack bot/app tokens, generic sk- prefixed keys
+    static PATTERNS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?x)
+              sk-ant-api\S{10,}    # Anthropic API keys
+            | sk-\S{20,}           # OpenAI-style keys
+            | xoxb-\S{10,}         # Slack bot tokens
+            | xapp-\S{10,}         # Slack app tokens
+            | xoxp-\S{10,}         # Slack user tokens
+            | Bot\s+[A-Za-z0-9_\-]{30,}  # Discord bot tokens
+            ",
+        )
+        .expect("redaction regex should compile")
+    });
+
+    PATTERNS.replace_all(input, "[REDACTED]").into_owned()
+}
+
 fn opencrust_dir() -> PathBuf {
     opencrust_config::ConfigLoader::default_config_dir()
 }
@@ -176,6 +233,7 @@ async fn main() -> Result<()> {
             .with_env_filter(
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level)),
             )
+            .with_writer(RedactingWriter::stderr())
             .init();
     };
 

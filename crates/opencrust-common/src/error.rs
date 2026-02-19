@@ -49,3 +49,23 @@ pub enum Error {
     #[error("{0}")]
     Other(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Error;
+
+    #[test]
+    fn error_display_includes_context() {
+        let e = Error::Config("bad yaml".into());
+        assert_eq!(e.to_string(), "configuration error: bad yaml");
+
+        let e = Error::Plugin("timeout".into());
+        assert_eq!(e.to_string(), "plugin error: timeout");
+
+        let e = Error::Security("blocked".into());
+        assert_eq!(e.to_string(), "security error: blocked");
+
+        let e = Error::Other("misc".into());
+        assert_eq!(e.to_string(), "misc");
+    }
+}

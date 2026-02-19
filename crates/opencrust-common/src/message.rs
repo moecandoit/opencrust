@@ -71,3 +71,52 @@ impl Message {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ChannelId, SessionId, UserId};
+
+    #[test]
+    fn text_builder_creates_correct_message() {
+        let msg = Message::text(
+            SessionId::from_string("sess-1"),
+            ChannelId::from_string("ch-1"),
+            UserId::from_string("user-1"),
+            MessageDirection::Incoming,
+            "hello world",
+        );
+
+        assert_eq!(msg.session_id.as_str(), "sess-1");
+        assert_eq!(msg.channel_id.as_str(), "ch-1");
+        assert_eq!(msg.user_id.as_str(), "user-1");
+        assert!(!msg.id.is_empty());
+        match &msg.content {
+            MessageContent::Text(t) => assert_eq!(t, "hello world"),
+            _ => panic!("expected Text content"),
+        }
+    }
+
+    #[test]
+    fn text_builder_accepts_string() {
+        let msg = Message::text(
+            SessionId::new(),
+            ChannelId::new(),
+            UserId::new(),
+            MessageDirection::Outgoing,
+            String::from("owned string"),
+        );
+        match &msg.content {
+            MessageContent::Text(t) => assert_eq!(t, "owned string"),
+            _ => panic!("expected Text content"),
+        }
+    }
+
+    #[test]
+    fn message_direction_serializes() {
+        let json = serde_json::to_string(&MessageDirection::Incoming).unwrap();
+        assert_eq!(json, r#""Incoming""#);
+        let json = serde_json::to_string(&MessageDirection::Outgoing).unwrap();
+        assert_eq!(json, r#""Outgoing""#);
+    }
+}

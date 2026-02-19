@@ -28,6 +28,8 @@ dashmap = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }
 dirs = "6"
+governor = "0.8"
+tower_governor = "0.8"
 
 [dev-dependencies]
 wiremock = "0.6"

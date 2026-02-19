@@ -219,6 +219,65 @@ mod tests {
     }
 
     #[test]
+    fn load_mcp_json_returns_empty_when_file_missing() {
+        let dir = temp_dir("mcp-missing");
+        fs::create_dir_all(&dir).expect("failed to create temp dir");
+
+        let loader = ConfigLoader::with_dir(&dir);
+        let mcp = loader.load_mcp_json();
+        assert!(mcp.is_empty());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn merged_mcp_config_prefers_config_yml_on_conflict() {
+        let dir = temp_dir("mcp-merge");
+        fs::create_dir_all(&dir).expect("failed to create temp dir");
+
+        // Write an mcp.json with one server
+        let mcp_json = r#"{
+            "mcpServers": {
+                "server1": {
+                    "command": "from-json",
+                    "transport": "stdio"
+                },
+                "server2": {
+                    "command": "only-in-json",
+                    "transport": "stdio"
+                }
+            }
+        }"#;
+        fs::write(dir.join("mcp.json"), mcp_json).expect("failed to write mcp.json");
+
+        let loader = ConfigLoader::with_dir(&dir);
+
+        // Build an AppConfig with server1 overridden via config.yml mcp section
+        let mut config = crate::model::AppConfig::default();
+        config.mcp.insert(
+            "server1".to_string(),
+            crate::model::McpServerConfig {
+                command: "from-config-yml".to_string(),
+                args: vec![],
+                env: std::collections::HashMap::new(),
+                transport: "stdio".to_string(),
+                url: None,
+                enabled: None,
+                timeout: None,
+            },
+        );
+
+        let merged = loader.merged_mcp_config(&config);
+
+        // server1 should come from config.yml (wins)
+        assert_eq!(merged.get("server1").unwrap().command, "from-config-yml");
+        // server2 should still come from mcp.json
+        assert_eq!(merged.get("server2").unwrap().command, "only-in-json");
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn ensure_dirs_creates_expected_subdirectories() {
         let dir = temp_dir("ensure-dirs");
         let loader = ConfigLoader::with_dir(&dir);

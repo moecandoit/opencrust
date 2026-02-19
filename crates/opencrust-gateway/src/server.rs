@@ -159,11 +159,16 @@ impl GatewayServer {
         let listener = TcpListener::bind(&addr).await?;
         info!("OpenCrust gateway listening on {}", addr);
 
-        // Graceful shutdown on Ctrl-C / SIGTERM
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            .map_err(|e| opencrust_common::Error::Gateway(format!("server error: {e}")))?;
+        // Graceful shutdown on Ctrl-C / SIGTERM.
+        // `into_make_service_with_connect_info` injects ConnectInfo<SocketAddr>
+        // so that the rate-limiter can extract per-client IP addresses.
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .map_err(|e| opencrust_common::Error::Gateway(format!("server error: {e}")))?;
 
         // Disconnect MCP servers on shutdown
         if let Some(ref manager) = state_for_shutdown.mcp_manager {

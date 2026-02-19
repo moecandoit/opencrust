@@ -1239,3 +1239,61 @@ pub fn build_whatsapp_channels(
 
     channels
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_agent_runtime_empty_config_no_crash() {
+        let config = AppConfig::default();
+        let runtime = build_agent_runtime(&config);
+        // Should succeed with no providers or tools crashing
+        assert!(runtime.system_prompt().is_none());
+    }
+
+    #[test]
+    fn build_agent_runtime_unknown_provider_skips_gracefully() {
+        let mut config = AppConfig::default();
+        config.llm.insert(
+            "bad".to_string(),
+            opencrust_config::LlmProviderConfig {
+                provider: "nonexistent-provider".to_string(),
+                model: None,
+                api_key: None,
+                base_url: None,
+                extra: std::collections::HashMap::new(),
+            },
+        );
+        // Should not panic — unknown providers are logged and skipped
+        let _runtime = build_agent_runtime(&config);
+    }
+
+    #[test]
+    fn resolve_api_key_prefers_config_over_env() {
+        // Config value should win when present
+        let result = resolve_api_key(
+            Some("from-config"),
+            "NONEXISTENT_VAULT_KEY",
+            "NONEXISTENT_ENV_VAR_12345",
+        );
+        assert_eq!(result, Some("from-config".to_string()));
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_to_env() {
+        // Set a unique env var for this test
+        let var_name = "OPENCRUST_TEST_API_KEY_BOOTSTRAP_72";
+        // SAFETY: this test is single-threaded and uses a unique env var name.
+        unsafe { std::env::set_var(var_name, "from-env") };
+        let result = resolve_api_key(None, "NONEXISTENT_VAULT_KEY", var_name);
+        assert_eq!(result, Some("from-env".to_string()));
+        unsafe { std::env::remove_var(var_name) };
+    }
+
+    #[test]
+    fn resolve_api_key_returns_none_when_all_missing() {
+        let result = resolve_api_key(None, "NONEXISTENT_VAULT_KEY", "NONEXISTENT_ENV_VAR_99999");
+        assert_eq!(result, None);
+    }
+}
