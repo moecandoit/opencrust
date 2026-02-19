@@ -9,6 +9,8 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
+#[cfg(target_os = "macos")]
+use crate::bootstrap::build_imessage_channels;
 use crate::bootstrap::{
     build_agent_runtime, build_channels, build_discord_channels, build_mcp_tools,
     build_slack_channels, build_telegram_channels, build_whatsapp_channels,
@@ -140,6 +142,22 @@ impl GatewayServer {
                 shutdown_signal().await;
                 channel.disconnect().await.ok();
             });
+        }
+
+        // Start configured iMessage channels (macOS only)
+        #[cfg(target_os = "macos")]
+        {
+            let imessage_channels = build_imessage_channels(&state.config, &state);
+            for mut channel in imessage_channels {
+                tokio::spawn(async move {
+                    if let Err(e) = channel.connect().await {
+                        warn!("imessage channel failed to connect: {e}");
+                        return;
+                    }
+                    shutdown_signal().await;
+                    channel.disconnect().await.ok();
+                });
+            }
         }
 
         // Build WhatsApp channels (webhook-driven — no persistent connection)

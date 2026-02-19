@@ -6,6 +6,8 @@ use opencrust_agents::{
     AgentRuntime, AnthropicProvider, BashTool, ChatMessage, CohereEmbeddingProvider, FileReadTool,
     FileWriteTool, McpManager, OllamaProvider, OpenAiProvider, WebFetchTool,
 };
+#[cfg(target_os = "macos")]
+use opencrust_channels::{IMessageChannel, IMessageOnMessageFn};
 use opencrust_channels::{
     SlackChannel, SlackOnMessageFn, TelegramChannel, WhatsAppChannel, WhatsAppOnMessageFn,
 };
@@ -338,6 +340,10 @@ pub async fn build_channels(config: &AppConfig) -> opencrust_channels::ChannelRe
             "whatsapp" => {
                 // WhatsApp channels need SharedState for callbacks, so they are started later.
                 info!("whatsapp channel {name} will be started after state initialization");
+            }
+            "imessage" => {
+                // iMessage channels need SharedState for callbacks, so they are started later.
+                info!("imessage channel {name} will be started after state initialization");
             }
             other => {
                 warn!("unknown channel type: {other} for channel {name}, skipping");
@@ -1235,6 +1241,135 @@ pub fn build_whatsapp_channels(
         ));
         channels.push(channel);
         info!("configured whatsapp channel: {name}");
+    }
+
+    channels
+}
+
+/// Build iMessage channels from config. macOS-only.
+///
+/// Must be called after state is wrapped in `Arc` so the message callback can capture a `SharedState`.
+#[cfg(target_os = "macos")]
+pub fn build_imessage_channels(
+    config: &AppConfig,
+    state: &SharedState,
+) -> Vec<Box<dyn opencrust_channels::Channel>> {
+    let mut channels = Vec::new();
+
+    for (name, channel_config) in &config.channels {
+        if channel_config.channel_type != "imessage" || channel_config.enabled == Some(false) {
+            continue;
+        }
+
+        let poll_interval_secs: u64 = channel_config
+            .settings
+            .get("poll_interval_secs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(2);
+
+        let allowlist = Arc::new(Mutex::new(Allowlist::load_or_create(
+            &default_allowlist_path(),
+        )));
+
+        let pairing = Arc::new(Mutex::new(PairingManager::new(
+            std::time::Duration::from_secs(300),
+        )));
+
+        let state_for_cb = Arc::clone(state);
+        let allowlist_for_cb = Arc::clone(&allowlist);
+        let pairing_for_cb = Arc::clone(&pairing);
+
+        let on_message: IMessageOnMessageFn = Arc::new(
+            move |sender_id: String,
+                  user_name: String,
+                  text: String,
+                  _delta_tx: Option<tokio::sync::mpsc::Sender<String>>| {
+                let state = Arc::clone(&state_for_cb);
+                let allowlist = Arc::clone(&allowlist_for_cb);
+                let pairing = Arc::clone(&pairing_for_cb);
+                Box::pin(async move {
+                    // Allowlist / pairing check
+                    {
+                        let mut list = allowlist.lock().unwrap();
+                        if list.needs_owner() {
+                            list.claim_owner(&sender_id);
+                            info!("imessage: auto-paired owner {} ({})", user_name, sender_id);
+                            return Ok(format!(
+                                "Welcome, {}! You are now the owner of this OpenCrust bot.\n\n\
+                                 Send /pair to generate a code for adding other users.\n\
+                                 Send /help for available commands.",
+                                user_name
+                            ));
+                        }
+
+                        if !list.is_allowed(&sender_id) {
+                            let trimmed = text.trim();
+                            if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_digit()) {
+                                let claimed = pairing.lock().unwrap().claim(trimmed, &sender_id);
+                                if claimed.is_some() {
+                                    list.add(&sender_id);
+                                    info!(
+                                        "imessage: paired user {} ({}) via code",
+                                        user_name, sender_id
+                                    );
+                                    return Ok(format!(
+                                        "Welcome, {}! You now have access to this bot.",
+                                        user_name
+                                    ));
+                                }
+                            }
+
+                            warn!("imessage: unauthorized user {} ({})", user_name, sender_id);
+                            return Err("__blocked__".to_string());
+                        }
+                    }
+
+                    let session_id = format!("imessage-{sender_id}");
+
+                    let text = opencrust_security::InputValidator::sanitize(&text);
+                    if opencrust_security::InputValidator::check_prompt_injection(&text) {
+                        return Err(
+                            "input rejected: potential prompt injection detected".to_string()
+                        );
+                    }
+
+                    state
+                        .hydrate_session_history(&session_id, Some("imessage"), Some(&sender_id))
+                        .await;
+                    let history: Vec<opencrust_agents::ChatMessage> =
+                        state.session_history(&session_id);
+                    let continuity_key = state.continuity_key(Some(&sender_id));
+
+                    let response = state
+                        .agents
+                        .process_message_with_context(
+                            &session_id,
+                            &text,
+                            &history,
+                            continuity_key.as_deref(),
+                            Some(&sender_id),
+                        )
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    state
+                        .persist_turn(
+                            &session_id,
+                            Some("imessage"),
+                            Some(&sender_id),
+                            &text,
+                            &response,
+                        )
+                        .await;
+
+                    Ok(response)
+                })
+            },
+        );
+
+        let channel = IMessageChannel::new(poll_interval_secs, on_message);
+        channels.push(Box::new(channel) as Box<dyn opencrust_channels::Channel>);
+        info!("configured imessage channel: {name}");
     }
 
     channels

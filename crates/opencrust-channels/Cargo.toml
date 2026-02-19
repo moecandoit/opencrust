@@ -22,6 +22,8 @@ teloxide = { workspace = true, optional = true }
 tokio-tungstenite = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
+dirs = { version = "6", optional = true }
 
 [features]
 default = []
@@ -29,3 +31,4 @@ discord = ["dep:serenity", "dep:poise"]
 telegram = ["dep:teloxide"]
 slack = ["dep:tokio-tungstenite", "dep:futures"]
 whatsapp = ["dep:axum"]
+imessage = ["dep:rusqlite", "dep:dirs"]

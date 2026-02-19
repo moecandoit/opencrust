@@ -8,11 +8,15 @@ pub mod traits;
 
 #[cfg(feature = "discord")]
 pub mod discord;
+#[cfg(all(target_os = "macos", feature = "imessage"))]
+pub mod imessage;
 #[cfg(feature = "slack")]
 pub mod slack;
 #[cfg(feature = "whatsapp")]
 pub mod whatsapp;
 
+#[cfg(all(target_os = "macos", feature = "imessage"))]
+pub use imessage::{IMessageChannel, IMessageOnMessageFn};
 pub use protocol::{
     CONNECTOR_PROTOCOL_VERSION, ConnectorCapability, ConnectorFrame, ConnectorHandshake,
     MAX_CONNECTOR_FRAME_BYTES,
