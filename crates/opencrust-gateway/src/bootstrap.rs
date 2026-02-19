@@ -108,6 +108,31 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                 runtime.register_provider(Box::new(provider));
                 info!("configured ollama provider: {name}");
             }
+            "sansa" => {
+                let api_key = resolve_api_key(
+                    llm_config.api_key.as_deref(),
+                    "SANSA_API_KEY",
+                    "SANSA_API_KEY",
+                );
+
+                if let Some(key) = api_key {
+                    let base_url = llm_config
+                        .base_url
+                        .clone()
+                        .or_else(|| Some("https://api.sansaml.com".to_string()));
+                    let model = llm_config
+                        .model
+                        .clone()
+                        .or_else(|| Some("sansa-auto".to_string()));
+                    let provider = OpenAiProvider::new(key, model, base_url);
+                    runtime.register_provider(Box::new(provider));
+                    info!("configured sansa provider: {name}");
+                } else {
+                    warn!(
+                        "skipping sansa provider {name}: no API key (set api_key in config or SANSA_API_KEY env var)"
+                    );
+                }
+            }
             other => {
                 warn!("unknown LLM provider type: {other}, skipping {name}");
             }

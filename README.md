@@ -51,6 +51,7 @@ Rewritten from [OpenClaw](https://github.com/openclaw/openclaw). High-performanc
 - **Anthropic Claude** — full support with streaming (SSE)
 - **OpenAI / compatible APIs** — GPT-4o, Azure, local endpoints via `base_url`, with streaming
 - **Ollama** — local models with streaming support
+- **Sansa** — OpenAI-compatible API via [sansaml.com](https://sansaml.com)
 
 ### Channels
 - **Telegram** — streaming responses, MarkdownV2 formatting, bot commands (`/start`, `/help`, `/clear`, `/pair`, `/users`), user allowlist with pairing codes, typing indicators
@@ -138,6 +139,12 @@ llm:
     provider: ollama
     model: llama3.1
     base_url: "http://localhost:11434"
+
+  sansa:
+    provider: sansa
+    model: sansa-auto
+    # api_key can also be stored in the credential vault or SANSA_API_KEY env var
+    api_key: "sk-..."
 
 channels:
   telegram:
@@ -245,7 +252,7 @@ crates/
 | Telegram channel (streaming) | `opencrust-channels` | **Working** |
 | Slack channel (Socket Mode, streaming) | `opencrust-channels` | **Working** |
 | WhatsApp channel (webhook) | `opencrust-channels` | **Working** |
-| LLM providers (Anthropic, OpenAI, Ollama) | `opencrust-agents` | **Working** |
+| LLM providers (Anthropic, OpenAI, Ollama, Sansa) | `opencrust-agents` | **Working** |
 | Agent tools (bash, file_read, file_write, web_fetch) | `opencrust-agents` | **Working** |
 | MCP client (stdio transport, tool bridging) | `opencrust-agents` | **Working** |
 | Skills (SKILL.md, auto-discovery, install) | `opencrust-skills` | **Working** |

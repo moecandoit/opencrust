@@ -33,7 +33,7 @@ pub fn run_wizard(config_dir: &Path) -> Result<()> {
     println!();
 
     // --- Provider selection ---
-    let providers = &["anthropic", "openai"];
+    let providers = &["anthropic", "openai", "sansa"];
     let selection = Select::new()
         .with_prompt("Select your LLM provider")
         .items(providers)
@@ -46,6 +46,7 @@ pub fn run_wizard(config_dir: &Path) -> Result<()> {
     let env_hint = match provider {
         "anthropic" => "ANTHROPIC_API_KEY",
         "openai" => "OPENAI_API_KEY",
+        "sansa" => "SANSA_API_KEY",
         _ => "API_KEY",
     };
 
