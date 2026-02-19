@@ -35,17 +35,28 @@ A single 17 MB binary that runs your AI agents across Telegram, Discord, Slack, 
 ## Quick Start
 
 ```bash
-# Build from source (Rust 1.85+)
-cargo build --release
+# Install (Linux, macOS)
+curl -fsSL https://raw.githubusercontent.com/opencrust-org/opencrust/main/install.sh | sh
 
 # Interactive setup — pick your LLM provider, store API keys in encrypted vault
-./target/release/opencrust init
+opencrust init
 
 # Start
-./target/release/opencrust start
+opencrust start
 ```
 
-Pre-compiled binaries for Linux (x86_64), macOS (Intel, Apple Silicon) are available on [GitHub Releases](https://github.com/opencrust-org/opencrust/releases).
+<details>
+<summary>Build from source</summary>
+
+```bash
+# Requires Rust 1.85+
+cargo build --release
+./target/release/opencrust init
+./target/release/opencrust start
+```
+</details>
+
+Pre-compiled binaries for Linux (x86_64, aarch64), macOS (Intel, Apple Silicon), and Windows (x86_64) are available on [GitHub Releases](https://github.com/opencrust-org/opencrust/releases).
 
 ## Why OpenCrust?
 
