@@ -69,7 +69,7 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             cp target/${{ matrix.target }}/release/opencrust.exe dist/${{ matrix.artifact }}.exe
             cd dist
-            shasum -a 256 ${{ matrix.artifact }}.exe > ${{ matrix.artifact }}.exe.sha256
+            sha256sum ${{ matrix.artifact }}.exe > ${{ matrix.artifact }}.exe.sha256
           else
             cp target/${{ matrix.target }}/release/opencrust dist/${{ matrix.artifact }}
             cd dist
