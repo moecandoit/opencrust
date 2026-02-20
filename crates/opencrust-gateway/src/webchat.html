@@ -581,6 +581,8 @@
         appendMessage("sys", "WebSocket connected.");
         if (sessionId) {
           socket.send(JSON.stringify({ type: "resume", session_id: sessionId }));
+        } else {
+          socket.send(JSON.stringify({ type: "init" }));
         }
       };
 
