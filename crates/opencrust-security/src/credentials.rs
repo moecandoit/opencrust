@@ -195,6 +195,47 @@ pub fn try_vault_get(vault_path: &Path, key: &str) -> Option<String> {
     }
 }
 
+/// Try to store a credential in the vault, returning `true` on success.
+/// Falls back silently if the vault passphrase is not available or the vault
+/// cannot be opened/created. This is intended for best-effort key persistence
+/// at runtime (e.g. when a user adds a provider via the web UI).
+pub fn try_vault_set(vault_path: &Path, key: &str, value: &str) -> bool {
+    let passphrase = match std::env::var("OPENCRUST_VAULT_PASSPHRASE") {
+        Ok(p) if !p.is_empty() => p,
+        _ => return false,
+    };
+
+    let mut vault = if CredentialVault::exists(vault_path) {
+        match CredentialVault::open(vault_path, &passphrase) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("try_vault_set: could not open vault: {e}");
+                return false;
+            }
+        }
+    } else {
+        match CredentialVault::create(vault_path, &passphrase) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("try_vault_set: could not create vault: {e}");
+                return false;
+            }
+        }
+    };
+
+    vault.set(key, value);
+    match vault.save() {
+        Ok(()) => {
+            info!("stored credential '{key}' in vault");
+            true
+        }
+        Err(e) => {
+            warn!("try_vault_set: failed to save vault: {e}");
+            false
+        }
+    }
+}
+
 fn derive_key(passphrase: &str, salt: &[u8]) -> Vec<u8> {
     let iterations = NonZeroU32::new(PBKDF2_ITERATIONS).expect("iterations > 0");
     let mut key = vec![0u8; KEY_LEN];

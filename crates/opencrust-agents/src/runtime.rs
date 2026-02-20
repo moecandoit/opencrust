@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use futures::StreamExt;
 use futures::future::join_all;
@@ -19,8 +19,8 @@ const MAX_TOOL_ITERATIONS: usize = 10;
 
 /// Manages agent sessions, tool execution, and LLM provider routing.
 pub struct AgentRuntime {
-    providers: Vec<Box<dyn LlmProvider>>,
-    default_provider: Option<String>,
+    providers: RwLock<Vec<Arc<dyn LlmProvider>>>,
+    default_provider: RwLock<Option<String>>,
     memory: Option<Arc<dyn MemoryProvider>>,
     embeddings: Option<Arc<dyn EmbeddingProvider>>,
     tools: Vec<Box<dyn Tool>>,
@@ -32,8 +32,8 @@ pub struct AgentRuntime {
 impl AgentRuntime {
     pub fn new() -> Self {
         Self {
-            providers: Vec::new(),
-            default_provider: None,
+            providers: RwLock::new(Vec::new()),
+            default_provider: RwLock::new(None),
             memory: None,
             embeddings: None,
             tools: Vec::new(),
@@ -59,26 +59,59 @@ impl AgentRuntime {
         self.max_context_tokens = Some(max_context_tokens);
     }
 
-    pub fn register_provider(&mut self, provider: Box<dyn LlmProvider>) {
+    pub fn register_provider(&self, provider: Arc<dyn LlmProvider>) {
         let id = provider.provider_id().to_string();
         info!("registered LLM provider: {}", id);
-        if self.default_provider.is_none() {
-            self.default_provider = Some(id);
+        {
+            let mut default = self.default_provider.write().unwrap();
+            if default.is_none() {
+                *default = Some(id);
+            }
         }
-        self.providers.push(provider);
+        self.providers.write().unwrap().push(provider);
     }
 
-    pub fn get_provider(&self, id: &str) -> Option<&dyn LlmProvider> {
+    pub fn get_provider(&self, id: &str) -> Option<Arc<dyn LlmProvider>> {
         self.providers
+            .read()
+            .unwrap()
             .iter()
             .find(|p| p.provider_id() == id)
-            .map(|p| p.as_ref())
+            .cloned()
     }
 
-    pub fn default_provider(&self) -> Option<&dyn LlmProvider> {
-        self.default_provider
-            .as_ref()
-            .and_then(|id| self.get_provider(id))
+    pub fn default_provider(&self) -> Option<Arc<dyn LlmProvider>> {
+        let default_id = self.default_provider.read().unwrap().clone();
+        default_id.and_then(|id| self.get_provider(&id))
+    }
+
+    /// Return the IDs of all registered providers.
+    pub fn provider_ids(&self) -> Vec<String> {
+        self.providers
+            .read()
+            .unwrap()
+            .iter()
+            .map(|p| p.provider_id().to_string())
+            .collect()
+    }
+
+    /// Set the default provider by ID. Returns `true` if the provider exists.
+    pub fn set_default_provider_id(&self, id: &str) -> bool {
+        let exists = self
+            .providers
+            .read()
+            .unwrap()
+            .iter()
+            .any(|p| p.provider_id() == id);
+        if exists {
+            *self.default_provider.write().unwrap() = Some(id.to_string());
+        }
+        exists
+    }
+
+    /// Return the current default provider ID.
+    pub fn default_provider_id(&self) -> Option<String> {
+        self.default_provider.read().unwrap().clone()
     }
 
     pub fn set_memory_provider(&mut self, memory: Arc<dyn MemoryProvider>) {
@@ -280,7 +313,7 @@ impl AgentRuntime {
         system_prompt_override: Option<&str>,
         max_tokens_override: Option<u32>,
     ) -> Result<String> {
-        let provider = if let Some(pid) = provider_id {
+        let provider: Arc<dyn LlmProvider> = if let Some(pid) = provider_id {
             self.get_provider(pid)
                 .ok_or_else(|| Error::Agent(format!("provider '{pid}' not found")))?
         } else {
@@ -406,7 +439,7 @@ impl AgentRuntime {
         user_id: Option<&str>,
         is_heartbeat: bool,
     ) -> Result<String> {
-        let provider = self
+        let provider: Arc<dyn LlmProvider> = self
             .default_provider()
             .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
 
@@ -552,7 +585,7 @@ impl AgentRuntime {
         continuity_key: Option<&str>,
         user_id: Option<&str>,
     ) -> Result<String> {
-        let provider = self
+        let provider: Arc<dyn LlmProvider> = self
             .default_provider()
             .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
 
@@ -793,7 +826,8 @@ impl AgentRuntime {
     }
 
     pub async fn health_check_all(&self) -> Result<Vec<(String, bool)>> {
-        let checks = self.providers.iter().map(|provider| async {
+        let providers: Vec<Arc<dyn LlmProvider>> = self.providers.read().unwrap().clone();
+        let checks = providers.iter().map(|provider| async {
             let provider_id = provider.provider_id().to_string();
             let ok = provider.health_check().await.unwrap_or(false);
             (provider_id, ok)

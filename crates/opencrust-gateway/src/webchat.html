@@ -80,7 +80,7 @@
 
     .workspace {
       display: grid;
-      grid-template-columns: 330px 1fr;
+      grid-template-columns: 280px 1fr;
       gap: 14px;
       align-items: start;
     }
@@ -116,48 +116,23 @@
     .sidebar-body {
       padding: 14px;
       display: grid;
-      gap: 12px;
+      gap: 14px;
     }
 
-    .key-list {
-      display: grid;
-      gap: 10px;
-    }
-
-    .key-row {
-      display: grid;
-      gap: 5px;
-      color: var(--ink-soft);
-      font-size: 0.83rem;
-      font-weight: 500;
-    }
-
-    .key-row input,
-    textarea {
-      width: 100%;
-      border: 1px solid var(--panel-edge);
-      border-radius: 10px;
-      color: var(--ink);
-      background: #ffffff;
-      padding: 10px 11px;
-      font-family: "IBM Plex Mono", Consolas, monospace;
-      font-size: 0.87rem;
-      transition: border-color 120ms ease, box-shadow 120ms ease;
-    }
-
-    .key-row input:focus,
-    textarea:focus {
-      outline: none;
-      border-color: #cf7641;
-      box-shadow: 0 0 0 3px rgba(224, 107, 45, 0.16);
-    }
-
-    .stack {
+    .status-group {
       display: grid;
       gap: 8px;
     }
 
-    .line {
+    .status-group h3 {
+      margin: 0;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--ink-soft);
+    }
+
+    .status-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -166,21 +141,141 @@
       color: var(--ink-soft);
     }
 
-    .line code {
+    .status-row code {
       color: #1f4e6f;
       font-family: "IBM Plex Mono", Consolas, monospace;
       font-size: 0.78rem;
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 150px;
     }
 
-    .status-note {
-      margin: 0;
-      border: 1px dashed #d7c6aa;
-      background: #fff8ee;
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+
+    .dot-ok { background: var(--online); }
+    .dot-off { background: var(--offline); }
+    .dot-warn { background: #d4a017; }
+
+    .channel-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    .channel-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border: 1px solid var(--panel-edge);
+      border-radius: 8px;
+      font-size: 0.78rem;
+      background: #fff;
+    }
+
+    .no-channels {
+      color: var(--ink-soft);
+      font-size: 0.8rem;
+      font-style: italic;
+    }
+
+    .gateway-key-section {
+      display: grid;
+      gap: 6px;
+    }
+
+    .gateway-key-section label {
+      font-size: 0.82rem;
+      color: var(--ink-soft);
+      font-weight: 500;
+    }
+
+    .gateway-key-section input {
+      width: 100%;
+      border: 1px solid var(--panel-edge);
       border-radius: 10px;
-      padding: 9px;
-      color: #7c5d32;
-      font-size: 0.79rem;
-      line-height: 1.35;
+      color: var(--ink);
+      background: #ffffff;
+      padding: 8px 10px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      font-size: 0.82rem;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .gateway-key-section input:focus {
+      outline: none;
+      border-color: #cf7641;
+      box-shadow: 0 0 0 3px rgba(224, 107, 45, 0.16);
+    }
+
+    .gateway-key-section .hint {
+      font-size: 0.76rem;
+      margin: 0;
+    }
+
+    .provider-select {
+      width: 100%;
+      border: 1px solid var(--panel-edge);
+      border-radius: 10px;
+      color: var(--ink);
+      background: #ffffff;
+      padding: 8px 10px;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      font-size: 0.84rem;
+      cursor: pointer;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+      appearance: auto;
+    }
+
+    .provider-select:focus {
+      outline: none;
+      border-color: #cf7641;
+      box-shadow: 0 0 0 3px rgba(224, 107, 45, 0.16);
+    }
+
+    .provider-status {
+      font-size: 0.78rem;
+      color: var(--ink-soft);
+      min-height: 1.2em;
+    }
+
+    .provider-key-input {
+      width: 100%;
+      border: 1px solid var(--panel-edge);
+      border-radius: 10px;
+      color: var(--ink);
+      background: #ffffff;
+      padding: 8px 10px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      font-size: 0.82rem;
+      margin-bottom: 6px;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .provider-key-input:focus {
+      outline: none;
+      border-color: #cf7641;
+      box-shadow: 0 0 0 3px rgba(224, 107, 45, 0.16);
+    }
+
+    .provider-activate-btn {
+      width: 100%;
+      border: none;
+      color: #2f220e;
+      background: linear-gradient(145deg, var(--brand), var(--brand-2));
+      box-shadow: 0 6px 14px rgba(224, 107, 45, 0.22);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
     }
 
     .pill {
@@ -213,11 +308,6 @@
       gap: 8px 12px;
       color: var(--ink-soft);
       font-size: 0.84rem;
-    }
-
-    .chat-meta code {
-      color: #1f4e6f;
-      font-family: "IBM Plex Mono", Consolas, monospace;
     }
 
     .chat {
@@ -320,11 +410,31 @@
     }
 
     textarea {
+      width: 100%;
       min-height: 66px;
       max-height: 190px;
       resize: vertical;
+      border: 1px solid var(--panel-edge);
+      border-radius: 10px;
+      color: var(--ink);
+      background: #ffffff;
+      padding: 10px 11px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
       font-size: 0.9rem;
       line-height: 1.4;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #cf7641;
+      box-shadow: 0 0 0 3px rgba(224, 107, 45, 0.16);
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--panel-edge);
+      margin: 2px 0;
     }
 
     @keyframes rise {
@@ -352,8 +462,8 @@
       <div class="brand">
         <div class="badge"></div>
         <div>
-          <h1 class="title">OpenCrust Console</h1>
-          <p class="subtitle">Local gateway chat and integration setup</p>
+          <h1 class="title">OpenCrust</h1>
+          <p class="subtitle">Your personal AI assistant</p>
         </div>
       </div>
       <div class="pill" id="conn-pill"><span class="offline">Disconnected</span></div>
@@ -362,39 +472,58 @@
     <div class="workspace">
       <aside class="panel">
         <div class="panel-head">
-          <h2>Integrations</h2>
-          <p class="hint">API keys are local-browser only for now. Backend wiring can be added next.</p>
+          <h2>Status</h2>
         </div>
         <div class="sidebar-body">
-          <div class="key-list">
-            <label class="key-row">
-              <span>Gateway API Key</span>
-              <input id="key-gateway" type="password" placeholder="gateway key..." autocomplete="off">
-            </label>
-            <label class="key-row">
-              <span>OpenAI API Key</span>
-              <input id="key-openai" type="password" placeholder="sk-..." autocomplete="off">
-            </label>
-            <label class="key-row">
-              <span>Anthropic API Key</span>
-              <input id="key-anthropic" type="password" placeholder="sk-ant-..." autocomplete="off">
-            </label>
-            <label class="key-row">
-              <span>MiniMax API Key</span>
-              <input id="key-minimax" type="password" placeholder="mm-..." autocomplete="off">
-            </label>
+          <div class="status-group">
+            <h3>Gateway</h3>
+            <div class="status-row">
+              <span>Server</span>
+              <code id="api-status">checking...</code>
+            </div>
+            <div class="status-row">
+              <span>Session</span>
+              <code id="session">none</code>
+            </div>
+            <div class="status-row">
+              <span>Active sessions</span>
+              <code id="session-count">-</code>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <div class="status-group">
+            <h3>Channels</h3>
+            <div id="channel-list" class="channel-list">
+              <span class="no-channels">No channels connected</span>
+            </div>
+          </div>
+
+          <hr class="divider">
+
+          <div class="status-group">
+            <h3>LLM Provider</h3>
+            <select id="provider-select" class="provider-select">
+              <option value="">Loading...</option>
+            </select>
+            <div id="provider-status" class="provider-status"></div>
+            <div id="provider-key-section" style="display:none">
+              <input id="provider-api-key" type="password" placeholder="Enter API key..." autocomplete="off" class="provider-key-input">
+              <button id="provider-activate" class="provider-activate-btn">Save & Activate</button>
+            </div>
+          </div>
+
+          <div id="auth-section" class="gateway-key-section" style="display:none">
+            <hr class="divider">
+            <label for="key-gateway">Gateway API Key</label>
+            <input id="key-gateway" type="password" placeholder="Enter your gateway key" autocomplete="off">
+            <p class="hint">This gateway requires authentication.</p>
+            <button id="auth-connect">Connect</button>
           </div>
 
           <div class="actions">
-            <button id="save-keys">Save Keys</button>
-            <button id="clear-keys">Clear Keys</button>
-          </div>
-
-          <p class="status-note" id="key-status">No keys saved yet.</p>
-
-          <div class="stack">
-            <div class="line"><span>Session</span><code id="session">none</code></div>
-            <div class="line"><span>Gateway</span><span id="api-status">unknown</span></div>
+            <button id="refresh">Refresh</button>
           </div>
         </div>
       </aside>
@@ -406,9 +535,8 @@
             <span>Enter sends, Shift+Enter newline</span>
           </div>
           <div class="actions">
-            <button id="refresh">Refresh Status</button>
             <button id="reconnect">Reconnect</button>
-            <button id="clear">Clear Chat</button>
+            <button id="clear">New Chat</button>
           </div>
         </div>
 
@@ -434,24 +562,35 @@
     const connPill = document.getElementById("conn-pill");
     const sessionEl = document.getElementById("session");
     const apiStatusEl = document.getElementById("api-status");
+    const sessionCountEl = document.getElementById("session-count");
+    const channelListEl = document.getElementById("channel-list");
+    const providerSelect = document.getElementById("provider-select");
+    const providerStatus = document.getElementById("provider-status");
+    const providerKeySection = document.getElementById("provider-key-section");
+    const providerApiKey = document.getElementById("provider-api-key");
+    const providerActivateBtn = document.getElementById("provider-activate");
+    const authSection = document.getElementById("auth-section");
     const keyGatewayEl = document.getElementById("key-gateway");
-    const keyOpenAiEl = document.getElementById("key-openai");
-    const keyAnthropicEl = document.getElementById("key-anthropic");
-    const keyMinimaxEl = document.getElementById("key-minimax");
-    const saveKeysBtn = document.getElementById("save-keys");
-    const clearKeysBtn = document.getElementById("clear-keys");
-    const keyStatusEl = document.getElementById("key-status");
+    const authConnectBtn = document.getElementById("auth-connect");
 
     const storageKey = "opencrust.session_id";
-    const keyStoragePrefix = "opencrust.key.";
+    const keyStorage = "opencrust.gateway_key";
+    const providerStorage = "opencrust.provider";
     let sessionId = localStorage.getItem(storageKey) || "";
+    let gatewayKey = localStorage.getItem(keyStorage) || "";
+    let selectedProvider = localStorage.getItem(providerStorage) || "";
+    let authRequired = false;
     let socket = null;
     let reconnectTimer = null;
+    let providerData = [];
+
+    // Pre-fill saved key
+    keyGatewayEl.value = gatewayKey;
 
     function wsUrl() {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
       const base = `${proto}//${location.host}/ws`;
-      const key = keyGatewayEl.value.trim();
+      const key = gatewayKey || keyGatewayEl.value.trim();
       return key ? `${base}?token=${encodeURIComponent(key)}` : base;
     }
 
@@ -465,10 +604,13 @@
       sessionId = id || "";
       if (sessionId) {
         localStorage.setItem(storageKey, sessionId);
+        sessionEl.textContent = sessionId.slice(0, 8) + "...";
+        sessionEl.title = sessionId;
       } else {
         localStorage.removeItem(storageKey);
+        sessionEl.textContent = "none";
+        sessionEl.title = "";
       }
-      sessionEl.textContent = sessionId || "none";
     }
 
     function appendMessage(kind, text) {
@@ -479,62 +621,118 @@
       chatEl.scrollTop = chatEl.scrollHeight;
     }
 
-    function setKeyStatus(text) {
-      keyStatusEl.textContent = text;
-    }
-
-    function persistKey(name, value) {
-      const key = `${keyStoragePrefix}${name}`;
-      if (value && value.trim()) {
-        localStorage.setItem(key, value.trim());
-      } else {
-        localStorage.removeItem(key);
-      }
-    }
-
-    function loadKeys() {
-      keyGatewayEl.value = localStorage.getItem(`${keyStoragePrefix}gateway`) || "";
-      keyOpenAiEl.value = localStorage.getItem(`${keyStoragePrefix}openai`) || "";
-      keyAnthropicEl.value = localStorage.getItem(`${keyStoragePrefix}anthropic`) || "";
-      keyMinimaxEl.value = localStorage.getItem(`${keyStoragePrefix}minimax`) || "";
-
-      const count =
-        Number(Boolean(keyGatewayEl.value)) +
-        Number(Boolean(keyOpenAiEl.value)) +
-        Number(Boolean(keyAnthropicEl.value)) +
-        Number(Boolean(keyMinimaxEl.value));
-      setKeyStatus(count > 0 ? `${count} key(s) loaded from local storage.` : "No keys saved yet.");
-    }
-
-    function saveKeys() {
-      persistKey("gateway", keyGatewayEl.value);
-      persistKey("openai", keyOpenAiEl.value);
-      persistKey("anthropic", keyAnthropicEl.value);
-      persistKey("minimax", keyMinimaxEl.value);
-      setKeyStatus("Keys saved locally in this browser.");
-    }
-
-    function clearKeys() {
-      localStorage.removeItem(`${keyStoragePrefix}gateway`);
-      localStorage.removeItem(`${keyStoragePrefix}openai`);
-      localStorage.removeItem(`${keyStoragePrefix}anthropic`);
-      localStorage.removeItem(`${keyStoragePrefix}minimax`);
-      keyGatewayEl.value = "";
-      keyOpenAiEl.value = "";
-      keyAnthropicEl.value = "";
-      keyMinimaxEl.value = "";
-      setKeyStatus("Keys cleared.");
-    }
-
     async function refreshStatus() {
       try {
         const r = await fetch("/api/status");
         const j = await r.json();
-        apiStatusEl.textContent = `${j.status}, sessions=${j.sessions}`;
+        apiStatusEl.innerHTML = `<span class="status-dot dot-ok"></span>${j.status}`;
+        sessionCountEl.textContent = j.sessions;
+
+        if (j.channels && j.channels.length > 0) {
+          channelListEl.innerHTML = j.channels
+            .map(ch => `<span class="channel-tag"><span class="status-dot dot-ok"></span>${ch}</span>`)
+            .join("");
+        } else {
+          channelListEl.innerHTML = '<span class="no-channels">None configured</span>';
+        }
       } catch {
-        apiStatusEl.textContent = "unavailable";
+        apiStatusEl.innerHTML = '<span class="status-dot dot-off"></span>unavailable';
+        sessionCountEl.textContent = "-";
+        channelListEl.innerHTML = '<span class="no-channels">-</span>';
+      }
+
+      loadProviders();
+    }
+
+    async function loadProviders() {
+      try {
+        const r = await fetch("/api/providers");
+        const j = await r.json();
+        providerData = j.providers || [];
+
+        providerSelect.innerHTML = "";
+        for (const p of providerData) {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = p.active ? p.display_name : `${p.display_name} (not configured)`;
+          providerSelect.appendChild(opt);
+        }
+
+        // Restore saved selection, or pick the default
+        const defaultProvider = providerData.find(p => p.is_default);
+        const saved = selectedProvider || (defaultProvider ? defaultProvider.id : "");
+        if (saved && [...providerSelect.options].some(o => o.value === saved)) {
+          providerSelect.value = saved;
+        }
+        updateProviderUI();
+      } catch {
+        providerSelect.innerHTML = '<option value="">unavailable</option>';
+        providerStatus.textContent = "";
       }
     }
+
+    function updateProviderUI() {
+      const id = providerSelect.value;
+      const p = providerData.find(x => x.id === id);
+      if (!p) {
+        providerStatus.textContent = "";
+        providerKeySection.style.display = "none";
+        return;
+      }
+      if (p.active) {
+        const tag = p.is_default ? "active, default" : "active";
+        providerStatus.innerHTML = `<span class="status-dot dot-ok"></span>${tag}`;
+        providerKeySection.style.display = "none";
+      } else {
+        providerStatus.innerHTML = `<span class="status-dot dot-off"></span>not configured`;
+        providerKeySection.style.display = p.needs_api_key ? "" : "none";
+      }
+      selectedProvider = id;
+      localStorage.setItem(providerStorage, id);
+    }
+
+    providerSelect.addEventListener("change", () => {
+      updateProviderUI();
+      // If switching to an active provider, tell the backend to use it as default
+      const p = providerData.find(x => x.id === providerSelect.value);
+      if (p && p.active) {
+        fetch("/api/providers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider_type: p.id, set_default: true }),
+        }).then(() => loadProviders());
+      }
+    });
+
+    providerActivateBtn.addEventListener("click", async () => {
+      const id = providerSelect.value;
+      const key = providerApiKey.value.trim();
+      if (!key) return;
+
+      providerActivateBtn.textContent = "Activating...";
+      providerActivateBtn.disabled = true;
+
+      try {
+        const r = await fetch("/api/providers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider_type: id, api_key: key, set_default: true }),
+        });
+        const j = await r.json();
+        if (r.ok) {
+          providerApiKey.value = "";
+          appendMessage("sys", `Provider ${id} activated.`);
+          await loadProviders();
+        } else {
+          appendMessage("error", j.message || "Failed to activate provider.");
+        }
+      } catch (e) {
+        appendMessage("error", `Failed to activate provider: ${e}`);
+      } finally {
+        providerActivateBtn.textContent = "Save & Activate";
+        providerActivateBtn.disabled = false;
+      }
+    });
 
     function scheduleReconnect() {
       if (reconnectTimer) return;
@@ -557,10 +755,14 @@
 
       switch (evt.type) {
         case "connected":
-          appendMessage("sys", evt.note ? `Connected (${evt.note}).` : "Connected.");
+          if (evt.note) {
+            appendMessage("sys", `Connected (${evt.note}).`);
+          }
+          refreshStatus();
           break;
         case "resumed":
           appendMessage("sys", `Session resumed (${evt.history_length ?? 0} messages in history).`);
+          refreshStatus();
           break;
         case "message":
           appendMessage("assistant", evt.content || "(empty response)");
@@ -582,7 +784,6 @@
 
       socket.onopen = () => {
         setConnectionState(true);
-        appendMessage("sys", "WebSocket connected.");
         if (sessionId) {
           socket.send(JSON.stringify({ type: "resume", session_id: sessionId }));
         } else {
@@ -594,7 +795,6 @@
 
       socket.onclose = () => {
         setConnectionState(false);
-        appendMessage("sys", "Socket closed. Reconnecting...");
         scheduleReconnect();
       };
 
@@ -622,12 +822,15 @@
       if (!content) return;
 
       if (!socket || socket.readyState !== WebSocket.OPEN) {
-        appendMessage("error", "Socket is not connected yet.");
+        appendMessage("error", "Not connected. Click Reconnect to try again.");
         return;
       }
 
       appendMessage("user", content);
-      socket.send(JSON.stringify({ content }));
+      const msg = { content };
+      const pid = providerSelect.value;
+      if (pid) msg.provider = pid;
+      socket.send(JSON.stringify(msg));
       inputEl.value = "";
       inputEl.focus();
     }
@@ -647,21 +850,48 @@
     clearBtn.addEventListener("click", () => {
       chatEl.innerHTML = "";
       setSession("");
-      appendMessage("sys", "Chat cleared. Start typing to create a new session.");
       reconnectFresh();
     });
 
     refreshBtn.addEventListener("click", refreshStatus);
-    saveKeysBtn.addEventListener("click", saveKeys);
-    clearKeysBtn.addEventListener("click", clearKeys);
 
-    setConnectionState(false);
-    setSession(sessionId);
-    loadKeys();
-    appendMessage("sys", "OpenCrust web chat ready.");
-    appendMessage("sys", "Tip: if this is a fresh session, send your first message to initialize it.");
-    refreshStatus();
-    connect();
+    authConnectBtn.addEventListener("click", () => {
+      gatewayKey = keyGatewayEl.value.trim();
+      if (gatewayKey) {
+        localStorage.setItem(keyStorage, gatewayKey);
+      }
+      reconnectFresh();
+    });
+
+    // Boot: check if auth is required, then connect
+    async function boot() {
+      setConnectionState(false);
+      setSession(sessionId);
+      refreshStatus();
+
+      try {
+        const r = await fetch("/api/auth-check");
+        const j = await r.json();
+        authRequired = j.auth_required;
+      } catch {
+        authRequired = false;
+      }
+
+      if (authRequired) {
+        authSection.style.display = "";
+        if (gatewayKey) {
+          // Have a saved key — try connecting with it
+          connect();
+        } else {
+          appendMessage("sys", "This gateway requires an API key. Enter it in the sidebar.");
+        }
+      } else {
+        authSection.style.display = "none";
+        connect();
+      }
+    }
+
+    boot();
   </script>
 </body>
 </html>

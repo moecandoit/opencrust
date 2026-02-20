@@ -274,7 +274,7 @@ async fn process_text_message(
     state: &SharedState,
     sender: &mut futures::stream::SplitSink<WebSocket, Message>,
 ) -> Option<serde_json::Value> {
-    let user_text = parse_user_text(text);
+    let (user_text, provider_id) = parse_user_message(text);
 
     // Input validation
     let user_text = opencrust_security::InputValidator::sanitize(&user_text);
@@ -297,14 +297,17 @@ async fn process_text_message(
     let history: Vec<ChatMessage> = state.session_history(session_id);
     let continuity_key = state.continuity_key(None);
 
-    // Route through agent runtime
+    // Route through agent runtime (with optional provider override)
     let reply = match state
         .agents
-        .process_message_with_context(
+        .process_message_with_agent_config(
             session_id,
             &user_text,
             &history,
             continuity_key.as_deref(),
+            None,
+            provider_id.as_deref(),
+            None,
             None,
         )
         .await
@@ -355,19 +358,25 @@ fn text_message_too_large(len: usize) -> bool {
     len > MAX_WS_TEXT_BYTES
 }
 
-/// Try to extract a `"content"` field from JSON, otherwise use the raw text.
-fn parse_user_text(raw: &str) -> String {
+/// Try to extract `"content"` and optional `"provider"` from JSON, otherwise
+/// use the raw text as content with no provider override.
+fn parse_user_message(raw: &str) -> (String, Option<String>) {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw)
         && let Some(text) = v.get("content").and_then(|c| c.as_str())
     {
-        return text.to_string();
+        let provider = v
+            .get("provider")
+            .and_then(|p| p.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        return (text.to_string(), provider);
     }
-    raw.to_string()
+    (raw.to_string(), None)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_WS_TEXT_BYTES, text_message_too_large, try_parse_resume};
+    use super::{MAX_WS_TEXT_BYTES, parse_user_message, text_message_too_large, try_parse_resume};
 
     #[test]
     fn text_message_size_guard_uses_strict_upper_bound() {
@@ -390,5 +399,28 @@ mod tests {
     #[test]
     fn parse_invalid_json_returns_none() {
         assert_eq!(try_parse_resume("not json"), None);
+    }
+
+    #[test]
+    fn parse_user_message_extracts_provider() {
+        let json = r#"{"content": "hello", "provider": "anthropic"}"#;
+        let (text, provider) = parse_user_message(json);
+        assert_eq!(text, "hello");
+        assert_eq!(provider, Some("anthropic".to_string()));
+    }
+
+    #[test]
+    fn parse_user_message_no_provider() {
+        let json = r#"{"content": "hello"}"#;
+        let (text, provider) = parse_user_message(json);
+        assert_eq!(text, "hello");
+        assert_eq!(provider, None);
+    }
+
+    #[test]
+    fn parse_user_message_plain_text() {
+        let (text, provider) = parse_user_message("just plain text");
+        assert_eq!(text, "just plain text");
+        assert_eq!(provider, None);
     }
 }

@@ -22,6 +22,7 @@ pub struct OpenAiProvider {
     api_key: String,
     model: String,
     base_url: String,
+    name: Option<String>,
 }
 
 impl OpenAiProvider {
@@ -35,7 +36,16 @@ impl OpenAiProvider {
             api_key: api_key.into(),
             model: model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
+            name: None,
         }
+    }
+
+    /// Override the provider ID returned by `provider_id()`.
+    /// Useful for OpenAI-compatible APIs (e.g. Sansa) that should register
+    /// under a distinct name.
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
 
     fn endpoint(&self) -> String {
@@ -197,7 +207,7 @@ impl OpenAiProvider {
 #[async_trait]
 impl LlmProvider for OpenAiProvider {
     fn provider_id(&self) -> &str {
-        "openai"
+        self.name.as_deref().unwrap_or("openai")
     }
 
     #[instrument(skip(self, request), fields(model))]

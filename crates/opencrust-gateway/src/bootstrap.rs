@@ -19,7 +19,7 @@ use tracing::{info, warn};
 use crate::state::SharedState;
 
 /// Default vault path under the user's home directory.
-fn default_vault_path() -> Option<PathBuf> {
+pub(crate) fn default_vault_path() -> Option<PathBuf> {
     Some(
         opencrust_config::ConfigLoader::default_config_dir()
             .join("credentials")
@@ -32,7 +32,7 @@ fn default_allowlist_path() -> PathBuf {
 }
 
 /// Resolve an API key using the priority chain: vault -> config -> env var.
-fn resolve_api_key(
+pub(crate) fn resolve_api_key(
     config_key: Option<&str>,
     vault_credential_key: &str,
     env_var: &str,
@@ -75,7 +75,7 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                         llm_config.model.clone(),
                         llm_config.base_url.clone(),
                     );
-                    runtime.register_provider(Box::new(provider));
+                    runtime.register_provider(Arc::new(provider));
                     info!("configured anthropic provider: {name}");
                 } else {
                     warn!(
@@ -96,7 +96,7 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                         llm_config.model.clone(),
                         llm_config.base_url.clone(),
                     );
-                    runtime.register_provider(Box::new(provider));
+                    runtime.register_provider(Arc::new(provider));
                     info!("configured openai provider: {name}");
                 } else {
                     warn!(
@@ -107,7 +107,7 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
             "ollama" => {
                 let provider =
                     OllamaProvider::new(llm_config.model.clone(), llm_config.base_url.clone());
-                runtime.register_provider(Box::new(provider));
+                runtime.register_provider(Arc::new(provider));
                 info!("configured ollama provider: {name}");
             }
             "sansa" => {
@@ -126,8 +126,8 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
                         .model
                         .clone()
                         .or_else(|| Some("sansa-auto".to_string()));
-                    let provider = OpenAiProvider::new(key, model, base_url);
-                    runtime.register_provider(Box::new(provider));
+                    let provider = OpenAiProvider::new(key, model, base_url).with_name("sansa");
+                    runtime.register_provider(Arc::new(provider));
                     info!("configured sansa provider: {name}");
                 } else {
                     warn!(
