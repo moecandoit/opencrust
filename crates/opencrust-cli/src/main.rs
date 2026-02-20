@@ -166,6 +166,7 @@ enum MigrateCommands {
     },
 }
 
+#[cfg(any(feature = "plugins", test))]
 fn validate_plugin_path(path_str: &str) -> Result<PathBuf> {
     if path_str.trim().is_empty() {
         anyhow::bail!("Path cannot be empty");
@@ -207,9 +208,9 @@ fn is_process_running(pid: u32) -> bool {
 
 #[cfg(windows)]
 fn is_process_running(pid: u32) -> bool {
-    use windows_sys::Win32::Foundation::{CloseHandle, FALSE};
+    use windows_sys::Win32::Foundation::{CloseHandle, FALSE, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, STILL_ACTIVE,
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
     unsafe {
