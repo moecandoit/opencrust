@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -67,7 +68,9 @@
       --warn-text: #e2c68b;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -89,22 +92,71 @@
     }
 
     .shell {
-      max-width: 1180px;
-      margin: 0 auto;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .left-sidebar {
+      width: 260px;
+      background: var(--topbar);
+      border-right: 1px solid var(--panel-edge);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 16px;
+      gap: 8px;
+    }
+
+    .left-sidebar .brand {
+      margin-bottom: 24px;
+    }
+
+    .nav-item {
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid transparent;
+    }
+
+    .nav-item:hover {
+      background: var(--sand-1);
+      color: var(--ink);
+    }
+
+    .nav-item.active {
+      background: linear-gradient(145deg, var(--brand-2), var(--brand));
+      color: #fff8ee;
+      box-shadow: 0 4px 12px rgba(57, 34, 13, 0.2);
+      border-color: var(--brand);
+    }
+
+    .main-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
       padding: 24px;
+      overflow-y: auto;
+      gap: 16px;
     }
 
     .topbar {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
       gap: 12px;
-      margin-bottom: 16px;
       padding: 10px 12px;
       border: 1px solid var(--panel-edge);
       border-radius: 14px;
       background: var(--topbar);
       box-shadow: 0 8px 20px rgba(35, 22, 10, 0.12);
+      min-height: 52px;
     }
 
     .topbar-actions {
@@ -155,9 +207,17 @@
 
     .workspace {
       display: grid;
-      grid-template-columns: 300px minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) 300px;
       gap: 14px;
-      align-items: start;
+      align-items: stretch;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .panel-view {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
 
     .panel {
@@ -183,6 +243,18 @@
       padding: 14px 16px;
       border-bottom: 1px solid var(--panel-edge);
       background: var(--sand-1);
+    }
+
+    .panel-art {
+      display: block;
+      width: 95%;
+      max-height: 148px;
+      object-fit: contain;
+      border-radius: 12px;
+      border: 1px solid var(--panel-edge);
+      margin: 0 auto 10px;
+      background: var(--panel);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
     }
 
     .panel-head h2 {
@@ -244,9 +316,17 @@
       margin-right: 4px;
     }
 
-    .dot-ok { background: var(--online); }
-    .dot-off { background: var(--offline); }
-    .dot-warn { background: #d4a017; }
+    .dot-ok {
+      background: var(--online);
+    }
+
+    .dot-off {
+      background: var(--offline);
+    }
+
+    .dot-warn {
+      background: #d4a017;
+    }
 
     .channel-list {
       display: grid;
@@ -373,8 +453,15 @@
       text-align: center;
     }
 
-    .online { color: var(--online); font-weight: 700; }
-    .offline { color: var(--offline); font-weight: 700; }
+    .online {
+      color: var(--online);
+      font-weight: 700;
+    }
+
+    .offline {
+      color: var(--offline);
+      font-weight: 700;
+    }
 
     .chat-top {
       display: flex;
@@ -396,14 +483,26 @@
     }
 
     .chat {
-      min-height: 52vh;
-      max-height: 62vh;
+      flex: 1;
       overflow-y: auto;
       padding: 18px;
       display: flex;
       flex-direction: column;
       gap: 11px;
       background: var(--sand-2);
+      min-height: 0;
+    }
+
+    .placeholder-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--ink-soft);
+      font-size: 1.1rem;
+      background: var(--sand-2);
+      padding: 32px;
     }
 
     .msg {
@@ -583,21 +682,50 @@
     }
 
     @keyframes rise {
-      from { opacity: 0; transform: translateY(8px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     @keyframes msg-in {
-      from { opacity: 0; transform: translateY(5px); }
-      to { opacity: 1; transform: translateY(0); }
+      from {
+        opacity: 0;
+        transform: translateY(5px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
 
     @media (max-width: 980px) {
-      .shell { padding: 14px; }
-      .workspace { grid-template-columns: 1fr; }
-      .chat { min-height: 44vh; max-height: 56vh; }
-      .composer { grid-template-columns: 1fr; }
-      .composer button { width: 100%; }
+      .shell {
+        padding: 14px;
+      }
+
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .chat {
+        min-height: 44vh;
+        max-height: 56vh;
+      }
+
+      .composer {
+        grid-template-columns: 1fr;
+      }
+
+      .composer button {
+        width: 100%;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -633,9 +761,11 @@
     }
   </style>
 </head>
+
 <body>
   <main class="shell">
-    <header class="topbar">
+    <!-- Left Sidebar for Navigation -->
+    <aside class="left-sidebar">
       <div class="brand">
         <div class="badge"></div>
         <div>
@@ -643,97 +773,158 @@
           <p class="subtitle">Your personal AI assistant</p>
         </div>
       </div>
-      <div class="topbar-actions">
-        <button id="theme-toggle" class="theme-toggle" type="button">Dark Mode</button>
-        <div class="pill" id="conn-pill"><span class="offline">Disconnected</span></div>
+
+      <div class="nav-item active" id="nav-chat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        Chat
       </div>
-    </header>
 
-    <div id="update-banner" class="update-banner" style="display:none">
-      <span id="update-banner-text"></span>
-      <button class="update-banner-close" id="update-banner-close" title="Dismiss">&times;</button>
-    </div>
+      <div class="nav-item" id="nav-mcps">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+        MCPs Settings
+      </div>
 
-    <div class="workspace">
-      <aside class="panel">
-        <div class="panel-head">
-          <h2>Status</h2>
+      <div class="nav-item" id="nav-extensions">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path
+            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+          </path>
+          <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+          <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+          <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        Extensions
+      </div>
+    </aside>
+
+    <div class="main-wrapper">
+      <header class="topbar">
+        <div class="topbar-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button">Dark Mode</button>
+          <div class="pill" id="conn-pill"><span class="offline">Disconnected</span></div>
         </div>
-        <div class="sidebar-body">
-          <div class="status-group">
-            <h3>Gateway</h3>
-            <div class="status-row">
-              <span>Server</span>
-              <code id="api-status">checking...</code>
-            </div>
-            <div class="status-row">
-              <span>Session</span>
-              <code id="session">none</code>
-            </div>
-            <div class="status-row">
-              <span>Active sessions</span>
-              <code id="session-count">-</code>
-            </div>
-          </div>
+      </header>
 
-          <hr class="divider">
+      <div id="update-banner" class="update-banner" style="display:none">
+        <span id="update-banner-text"></span>
+        <button class="update-banner-close" id="update-banner-close" title="Dismiss">&times;</button>
+      </div>
 
-          <div class="status-group">
-            <h3>Channels</h3>
-            <div id="channel-list" class="channel-list">
-              <span class="no-channels">No channels connected</span>
+      <div class="workspace">
+        <section class="panel panel-view" id="view-chat">
+          <div class="chat-top">
+            <div class="chat-meta">
+              <span>Chat</span>
+              <span>Enter sends, Shift+Enter newline</span>
+            </div>
+            <div class="actions">
+              <button id="reconnect">Reconnect</button>
+              <button id="clear">New Chat</button>
             </div>
           </div>
 
-          <hr class="divider">
+          <div id="chat" class="chat"></div>
 
-          <div class="status-group">
-            <h3>LLM Provider</h3>
-            <select id="provider-select" class="provider-select">
-              <option value="">Loading...</option>
-            </select>
-            <div id="provider-status" class="provider-status"></div>
-            <div id="provider-key-section" style="display:none">
-              <input id="provider-api-key" type="password" placeholder="Enter API key..." autocomplete="off" class="provider-key-input">
-              <button id="provider-activate" class="provider-activate-btn">Save & Activate</button>
+          <div class="controls">
+            <div class="composer">
+              <textarea id="input" placeholder="Type a message..."></textarea>
+              <button id="send" class="primary">Send</button>
             </div>
           </div>
+        </section>
 
-          <div id="auth-section" class="gateway-key-section" style="display:none">
+        <!-- Placeholder for MCPs View -->
+        <section class="panel panel-view" id="view-mcps" style="display: none;">
+          <div class="panel-head">
+            <h2>MCPs Settings</h2>
+          </div>
+          <div class="placeholder-view">
+            <p>MCPs Configuration Coming Soon!</p>
+            <p style="font-size: 0.9rem; margin-top: 8px;">You will be able to manage your MCP servers here.</p>
+          </div>
+        </section>
+
+        <!-- Placeholder for Extensions View -->
+        <section class="panel panel-view" id="view-extensions" style="display: none;">
+          <div class="panel-head">
+            <h2>Extensions</h2>
+          </div>
+          <div class="placeholder-view">
+            <p>Extensions Coming Soon!</p>
+            <p style="font-size: 0.9rem; margin-top: 8px;">You will be able to manage your extensions here.</p>
+          </div>
+        </section>
+        <aside class="panel">
+          <div class="panel-head">
+            <img class="panel-art" src="/assets/UI%20Crab.png" alt="OpenCrust UI crab">
+            <h2>System Status</h2>
+          </div>
+          <div class="sidebar-body">
+            <div class="status-group">
+              <h3>Gateway</h3>
+              <div class="status-row">
+                <span>Server</span>
+                <code id="api-status">checking...</code>
+              </div>
+              <div class="status-row">
+                <span>Session</span>
+                <code id="session">none</code>
+              </div>
+              <div class="status-row">
+                <span>Active sessions</span>
+                <code id="session-count">-</code>
+              </div>
+            </div>
+
             <hr class="divider">
-            <label for="key-gateway">Gateway API Key</label>
-            <input id="key-gateway" type="password" placeholder="Enter your gateway key" autocomplete="off">
-            <p class="hint">This gateway requires authentication.</p>
-            <button id="auth-connect">Connect</button>
-          </div>
 
-          <div class="actions">
-            <button id="refresh">Refresh</button>
-          </div>
-        </div>
-      </aside>
+            <div class="status-group">
+              <h3>Channels</h3>
+              <div id="channel-list" class="channel-list">
+                <span class="no-channels">No channels connected</span>
+              </div>
+            </div>
 
-      <section class="panel">
-        <div class="chat-top">
-          <div class="chat-meta">
-            <span>Chat</span>
-            <span>Enter sends, Shift+Enter newline</span>
-          </div>
-          <div class="actions">
-            <button id="reconnect">Reconnect</button>
-            <button id="clear">New Chat</button>
-          </div>
-        </div>
+            <hr class="divider">
 
-        <div id="chat" class="chat"></div>
+            <div class="status-group">
+              <h3>LLM Provider</h3>
+              <select id="provider-select" class="provider-select">
+                <option value="">Loading...</option>
+              </select>
+              <div id="provider-status" class="provider-status"></div>
+              <div id="provider-key-section" style="display:none">
+                <input id="provider-api-key" type="password" placeholder="Enter API key..." autocomplete="off"
+                  class="provider-key-input">
+                <button id="provider-activate" class="provider-activate-btn">Save & Activate</button>
+              </div>
+            </div>
 
-        <div class="controls">
-          <div class="composer">
-            <textarea id="input" placeholder="Type a message..."></textarea>
-            <button id="send" class="primary">Send</button>
+            <div id="auth-section" class="gateway-key-section" style="display:none">
+              <hr class="divider">
+              <label for="key-gateway">Gateway API Key</label>
+              <input id="key-gateway" type="password" placeholder="Enter your gateway key" autocomplete="off">
+              <p class="hint">This gateway requires authentication.</p>
+              <button id="auth-connect">Connect</button>
+            </div>
+
+            <div class="actions">
+              <button id="refresh">Refresh Status</button>
+            </div>
           </div>
-        </div>
-      </section>
+        </aside>
+      </div>
     </div>
   </main>
 
@@ -1033,7 +1224,7 @@
       }
       if (socket) {
         socket.onclose = null;
-        try { socket.close(); } catch {}
+        try { socket.close(); } catch { }
         socket = null;
       }
       setConnectionState(false);
@@ -1101,6 +1292,43 @@
       });
     }
 
+    // Navigation logic
+    const navItems = {
+      chat: document.getElementById("nav-chat"),
+      mcps: document.getElementById("nav-mcps"),
+      extensions: document.getElementById("nav-extensions")
+    };
+
+    const views = {
+      chat: document.getElementById("view-chat"),
+      mcps: document.getElementById("view-mcps"),
+      extensions: document.getElementById("view-extensions")
+    };
+
+    function switchView(viewId) {
+      // Update nav active states
+      Object.entries(navItems).forEach(([id, el]) => {
+        if (id === viewId) {
+          el.classList.add("active");
+        } else {
+          el.classList.remove("active");
+        }
+      });
+
+      // Update view visibility
+      Object.entries(views).forEach(([id, el]) => {
+        if (id === viewId) {
+          el.style.display = "";
+        } else {
+          el.style.display = "none";
+        }
+      });
+    }
+
+    navItems.chat.addEventListener("click", () => switchView("chat"));
+    navItems.mcps.addEventListener("click", () => switchView("mcps"));
+    navItems.extensions.addEventListener("click", () => switchView("extensions"));
+
     // Boot: check if auth is required, then connect
     async function boot() {
       initTheme();
@@ -1136,4 +1364,5 @@
     boot();
   </script>
 </body>
+
 </html>
