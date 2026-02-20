@@ -1,3 +1,4 @@
+mod banner;
 mod migrate;
 mod update;
 mod wizard;
@@ -265,6 +266,12 @@ async fn main() -> Result<()> {
                 start_daemon(config)?;
             } else {
                 init_tracing(&cli.log_level);
+                banner::print_banner(
+                    &config.gateway.host,
+                    config.gateway.port,
+                    &config,
+                    config_loader.config_dir(),
+                );
                 update::spawn_background_check();
                 let server = opencrust_gateway::GatewayServer::new(config);
                 server.run().await?;
@@ -283,6 +290,12 @@ async fn main() -> Result<()> {
             if daemon {
                 start_daemon(config)?;
             } else {
+                banner::print_banner(
+                    &config.gateway.host,
+                    config.gateway.port,
+                    &config,
+                    config_loader.config_dir(),
+                );
                 update::spawn_background_check();
                 let server = opencrust_gateway::GatewayServer::new(config);
                 server.run().await?;
