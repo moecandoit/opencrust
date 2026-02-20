@@ -22,6 +22,24 @@ cargo clippy
 cargo fmt
 ```
 
+## Documentation
+
+To build the documentation locally:
+
+```bash
+# Install mdBook
+cargo install mdbook
+
+# Build the book
+mdbook build docs
+
+# Serve the book (auto-reload)
+mdbook serve docs
+
+# Generate rustdoc
+cargo doc --no-deps
+```
+
 ## Finding Work
 
 - Check the [Issues](https://github.com/opencrust-org/opencrust/issues) page

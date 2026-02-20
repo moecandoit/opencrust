@@ -105,7 +105,7 @@ OpenCrust is built for the security requirements of always-on AI agents that acc
 - **Discord** — slash commands, event-driven message handling, session management
 - **Slack** — Socket Mode, streaming responses, allowlist/pairing
 - **WhatsApp** — Meta Cloud API webhooks, allowlist/pairing
-- **iMessage** — macOS native via chat.db polling, group chats, AppleScript sending ([setup guide](docs/imessage-setup.md))
+- **iMessage** — macOS native via chat.db polling, group chats, AppleScript sending ([setup guide](docs/src/channels/imessage.md))
 
 ### MCP (Model Context Protocol)
 - Connect any MCP-compatible server (filesystem, GitHub, databases, web search)
@@ -219,6 +219,23 @@ crates/
 | CLI (init, start/stop, migrate, mcp, skills) | Working |
 | Plugin system (WASM sandbox) | Scaffolded |
 | Media processing | Scaffolded |
+
+## Documentation
+
+Full documentation is available in the `docs/` directory.
+
+To build and view the documentation locally:
+
+```bash
+# Install mdBook
+cargo install mdbook
+
+# Serve the book at http://localhost:3000
+mdbook serve docs
+
+# Generate and view rustdoc
+cargo doc --no-deps --open
+```
 
 ## Contributing
 

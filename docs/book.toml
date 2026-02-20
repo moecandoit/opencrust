@@ -1,0 +1,5 @@
+[book]
+authors = ["OpenCrust Contributors"]
+language = "en"
+src = "src"
+title = "OpenCrust Documentation"
