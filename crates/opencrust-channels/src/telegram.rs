@@ -60,8 +60,11 @@ fn extract_message_info(msg: &teloxide::types::Message) -> Option<(i64, String, 
     // Ignore messages without a sender (e.g. channel posts)
     let user = msg.from.as_ref()?;
 
-    // Ignore bots to prevent loops
-    if user.is_bot {
+    // Telegram "Group Anonymous Bot" ID used for anonymous admins.
+    const ANONYMOUS_BOT_ID: u64 = 1087968824;
+
+    // Ignore bots to prevent loops, but allow anonymous admins.
+    if user.is_bot && user.id.0 != ANONYMOUS_BOT_ID {
         // Only log at debug/trace level to avoid spam, or warn if unexpected
         return None;
     }
@@ -376,7 +379,8 @@ mod tests {
             },
             "text": "hello"
         }"#;
-        let msg: teloxide::types::Message = serde_json::from_str(json).expect("failed to parse json");
+        let msg: teloxide::types::Message =
+            serde_json::from_str(json).expect("failed to parse json");
 
         let info = extract_message_info(&msg).expect("should extract info");
         assert_eq!(info.0, 12345);
@@ -402,7 +406,8 @@ mod tests {
             },
             "text": "hello group"
         }"#;
-        let msg: teloxide::types::Message = serde_json::from_str(json).expect("failed to parse json");
+        let msg: teloxide::types::Message =
+            serde_json::from_str(json).expect("failed to parse json");
 
         let info = extract_message_info(&msg).expect("should extract info");
         assert_eq!(info.0, -987654321);
@@ -427,10 +432,44 @@ mod tests {
             },
             "text": "I am a bot"
         }"#;
-        let msg: teloxide::types::Message = serde_json::from_str(json).expect("failed to parse json");
+        let msg: teloxide::types::Message =
+            serde_json::from_str(json).expect("failed to parse json");
 
         let info = extract_message_info(&msg);
         assert!(info.is_none(), "should ignore bot messages");
+    }
+
+    #[test]
+    fn test_extract_message_info_anonymous_admin_allowed() {
+        // Message from Group Anonymous Bot (ID 1087968824)
+        let json = r#"{
+            "message_id": 5,
+            "date": 1620000000,
+            "chat": {
+                "id": -987654321,
+                "type": "supergroup",
+                "title": "My Group"
+            },
+            "from": {
+                "id": 1087968824,
+                "is_bot": true,
+                "first_name": "Group Anonymous Bot",
+                "username": "GroupAnonymousBot"
+            },
+            "sender_chat": {
+                 "id": -987654321,
+                 "type": "supergroup",
+                 "title": "My Group"
+            },
+            "text": "admin command"
+        }"#;
+        let msg: teloxide::types::Message =
+            serde_json::from_str(json).expect("failed to parse json");
+
+        let info = extract_message_info(&msg).expect("should allow anonymous admin");
+        assert_eq!(info.0, -987654321);
+        assert_eq!(info.1, "1087968824");
+        assert_eq!(info.2, "Group Anonymous Bot");
     }
 
     #[test]
@@ -449,9 +488,13 @@ mod tests {
             },
             "text": "channel post"
         }"#;
-        let msg: teloxide::types::Message = serde_json::from_str(json).expect("failed to parse json");
+        let msg: teloxide::types::Message =
+            serde_json::from_str(json).expect("failed to parse json");
 
         let info = extract_message_info(&msg);
-        assert!(info.is_none(), "should ignore messages without sender (channel posts)");
+        assert!(
+            info.is_none(),
+            "should ignore messages without sender (channel posts)"
+        );
     }
 }
