@@ -94,12 +94,24 @@ async fn status(
         .collect::<serde_json::Map<String, serde_json::Value>>()
         .into();
 
-    axum::Json(serde_json::json!({
+    // Check for available update (from cached check file)
+    let latest_version = read_cached_latest_version();
+
+    let mut resp = serde_json::json!({
         "status": "running",
+        "version": env!("CARGO_PKG_VERSION"),
         "channels": channels,
         "sessions": state.sessions.len(),
         "llm": llm,
-    }))
+    });
+    if let Some(latest) = latest_version {
+        let current = env!("CARGO_PKG_VERSION");
+        if latest.trim_start_matches('v') != current {
+            resp["latest_version"] = serde_json::Value::String(latest);
+        }
+    }
+
+    axum::Json(resp)
 }
 
 async fn auth_check(
@@ -276,4 +288,12 @@ fn persist_api_key(vault_key: &str, value: &str) {
     if let Some(vault_path) = crate::bootstrap::default_vault_path() {
         opencrust_security::try_vault_set(&vault_path, vault_key, value);
     }
+}
+
+/// Read the cached latest version from ~/.opencrust/update-check.json.
+fn read_cached_latest_version() -> Option<String> {
+    let path = opencrust_config::ConfigLoader::default_config_dir().join("update-check.json");
+    let contents = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    v.get("latest_version")?.as_str().map(|s| s.to_string())
 }

@@ -1,4 +1,5 @@
 mod migrate;
+mod update;
 mod wizard;
 
 use std::path::PathBuf;
@@ -80,6 +81,16 @@ enum Commands {
         #[command(subcommand)]
         action: MigrateCommands,
     },
+
+    /// Update to the latest release
+    Update {
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Roll back to the previous version
+    Rollback,
 }
 
 #[derive(Subcommand)]
@@ -175,6 +186,14 @@ fn is_process_running(_pid: u32) -> bool {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Show update notice (non-blocking, from cache)
+    if !matches!(cli.command, Commands::Update { .. })
+        && let Some(notice) = update::check_for_update_notice()
+    {
+        eprintln!("{notice}");
+        eprintln!();
+    }
+
     // Init tracing for non-daemon mode (daemon reconfigures after fork)
     let init_tracing = |level: &str| {
         tracing_subscriber::fmt()
@@ -199,6 +218,7 @@ async fn main() -> Result<()> {
                 start_daemon(config)?;
             } else {
                 init_tracing(&cli.log_level);
+                update::spawn_background_check();
                 let server = opencrust_gateway::GatewayServer::new(config);
                 server.run().await?;
             }
@@ -596,6 +616,20 @@ async fn main() -> Result<()> {
                         Err(e) => println!("migration failed: {}", e),
                     }
                 }
+            }
+        }
+        Commands::Update { yes } => {
+            init_tracing(&cli.log_level);
+            match update::run_update(yes).await {
+                Ok(_) => {}
+                Err(e) => println!("update failed: {}", e),
+            }
+        }
+        Commands::Rollback => {
+            init_tracing(&cli.log_level);
+            match update::run_rollback() {
+                Ok(()) => {}
+                Err(e) => println!("rollback failed: {}", e),
             }
         }
     }

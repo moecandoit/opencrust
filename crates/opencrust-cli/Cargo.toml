@@ -29,8 +29,10 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 dialoguer = "0.11"
 serde_yaml = { workspace = true }
+serde = { workspace = true }
 dirs = "6"
 regex = { workspace = true }
+ring = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

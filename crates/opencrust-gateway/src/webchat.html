@@ -437,6 +437,49 @@
       margin: 2px 0;
     }
 
+    .update-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      margin-bottom: 12px;
+      border: 1px solid #d4a017;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #fef9ec, #fdf3d7);
+      font-size: 0.84rem;
+      color: #6b5300;
+      animation: rise 360ms ease both;
+    }
+
+    .update-banner a {
+      color: var(--brand);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .update-banner a:hover {
+      text-decoration: underline;
+    }
+
+    .update-banner-close {
+      background: none;
+      border: none;
+      color: #6b5300;
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: 0 4px;
+      line-height: 1;
+      opacity: 0.6;
+      box-shadow: none;
+    }
+
+    .update-banner-close:hover {
+      opacity: 1;
+      transform: none;
+      box-shadow: none;
+    }
+
     @keyframes rise {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
@@ -468,6 +511,11 @@
       </div>
       <div class="pill" id="conn-pill"><span class="offline">Disconnected</span></div>
     </header>
+
+    <div id="update-banner" class="update-banner" style="display:none">
+      <span id="update-banner-text"></span>
+      <button class="update-banner-close" id="update-banner-close" title="Dismiss">&times;</button>
+    </div>
 
     <div class="workspace">
       <aside class="panel">
@@ -572,6 +620,9 @@
     const authSection = document.getElementById("auth-section");
     const keyGatewayEl = document.getElementById("key-gateway");
     const authConnectBtn = document.getElementById("auth-connect");
+    const updateBanner = document.getElementById("update-banner");
+    const updateBannerText = document.getElementById("update-banner-text");
+    const updateBannerClose = document.getElementById("update-banner-close");
 
     const storageKey = "opencrust.session_id";
     const keyStorage = "opencrust.gateway_key";
@@ -627,6 +678,18 @@
         const j = await r.json();
         apiStatusEl.innerHTML = `<span class="status-dot dot-ok"></span>${j.status}`;
         sessionCountEl.textContent = j.sessions;
+
+        // Show update banner if a newer version is available
+        if (j.latest_version && j.version) {
+          const dismissed = sessionStorage.getItem("opencrust.update_dismissed");
+          if (dismissed !== j.latest_version) {
+            updateBannerText.innerHTML =
+              `Update available: v${j.version} &rarr; v${j.latest_version.replace(/^v/, "")} &mdash; run <code>opencrust update</code>`;
+            updateBanner.style.display = "";
+          }
+        } else {
+          updateBanner.style.display = "none";
+        }
 
         if (j.channels && j.channels.length > 0) {
           channelListEl.innerHTML = j.channels
@@ -854,6 +917,14 @@
     });
 
     refreshBtn.addEventListener("click", refreshStatus);
+
+    updateBannerClose.addEventListener("click", () => {
+      updateBanner.style.display = "none";
+      const ver = updateBannerText.textContent;
+      // Extract version to remember dismissal for this version only
+      const match = updateBannerText.innerHTML.match(/v([\d.]+)\s/);
+      if (match) sessionStorage.setItem("opencrust.update_dismissed", match[1]);
+    });
 
     authConnectBtn.addEventListener("click", () => {
       gatewayKey = keyGatewayEl.value.trim();
