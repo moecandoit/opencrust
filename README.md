@@ -14,6 +14,7 @@
   <a href="https://github.com/opencrust-org/opencrust/stargazers"><img src="https://img.shields.io/github/stars/opencrust-org/opencrust" alt="Stars"></a>
   <a href="https://github.com/opencrust-org/opencrust/issues"><img src="https://img.shields.io/github/issues/opencrust-org/opencrust" alt="Issues"></a>
   <a href="https://github.com/opencrust-org/opencrust/issues?q=label%3Agood-first-issue+is%3Aopen"><img src="https://img.shields.io/github/issues/opencrust-org/opencrust/good-first-issue?color=7057ff&label=good%20first%20issues" alt="Good First Issues"></a>
+  <a href="https://discord.gg/aEXGq5cS"><img src="https://img.shields.io/badge/discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
@@ -229,7 +230,7 @@ crates/
 
 ## Contributing
 
-OpenCrust is open source under the MIT license. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code guidelines, and the crate overview.
+OpenCrust is open source under the MIT license. Join the [Discord](https://discord.gg/aEXGq5cS) to chat with contributors, ask questions, or share what you're building. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code guidelines, and the crate overview.
 
 ### Current priorities
 
