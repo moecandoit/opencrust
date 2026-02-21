@@ -5,6 +5,7 @@ use axum::response::Html;
 use axum::routing::{get, post};
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
+use tower_http::services::ServeDir;
 
 use crate::a2a;
 use crate::api;
@@ -61,6 +62,7 @@ pub fn build_router(
         .route("/a2a/tasks", post(a2a::create_task))
         .route("/a2a/tasks/{id}", get(a2a::get_task))
         .route("/a2a/tasks/{id}/cancel", post(a2a::cancel_task))
+        .nest_service("/assets", ServeDir::new("assets"))
         .with_state(state)
         .merge(whatsapp_routes)
         .layer(governor_layer)
@@ -70,8 +72,14 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn web_chat() -> Html<&'static str> {
-    Html(include_str!("webchat.html"))
+async fn web_chat() -> Html<String> {
+    // Hot-reload during local development if the source file is present
+    if let Ok(content) = std::fs::read_to_string("crates/opencrust-gateway/src/webchat.html") {
+        return Html(content);
+    }
+
+    // Fall back to the statically compiled version for release binaries
+    Html(include_str!("webchat.html").to_string())
 }
 
 async fn status(
@@ -137,19 +145,43 @@ async fn list_providers(
     let active_ids = state.agents.provider_ids();
     let default_id = state.agents.default_provider_id();
 
-    let providers: Vec<serde_json::Value> = KNOWN_PROVIDERS
-        .iter()
-        .map(|(id, display, needs_key)| {
-            let active = active_ids.contains(&id.to_string());
-            serde_json::json!({
-                "id": id,
-                "display_name": display,
-                "active": active,
-                "is_default": default_id.as_deref() == Some(*id),
-                "needs_api_key": *needs_key,
-            })
-        })
-        .collect();
+    let mut providers: Vec<serde_json::Value> = Vec::with_capacity(KNOWN_PROVIDERS.len());
+    for (id, display, needs_key) in KNOWN_PROVIDERS {
+        let active = active_ids.contains(&id.to_string());
+        let mut model = None;
+        let mut models = Vec::new();
+
+        if active && let Some(provider) = state.agents.get_provider(id) {
+            model = provider.configured_model().map(|m| m.to_string());
+            match provider.available_models().await {
+                Ok(mut available) => {
+                    available.retain(|m| !m.trim().is_empty());
+                    available.sort();
+                    available.dedup();
+                    models = available;
+                }
+                Err(err) => {
+                    tracing::warn!("failed to list models for provider {}: {}", id, err);
+                }
+            }
+        }
+
+        if let Some(selected) = model.as_ref()
+            && !models.iter().any(|m| m == selected)
+        {
+            models.insert(0, selected.clone());
+        }
+
+        providers.push(serde_json::json!({
+            "id": id,
+            "display_name": display,
+            "active": active,
+            "is_default": default_id.as_deref() == Some(*id),
+            "needs_api_key": *needs_key,
+            "model": model,
+            "models": models,
+        }));
+    }
 
     axum::Json(serde_json::json!({ "providers": providers }))
 }
