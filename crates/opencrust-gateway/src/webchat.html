@@ -165,6 +165,95 @@
       gap: 8px;
     }
 
+    .nano-agents {
+      position: relative;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      align-self: flex-start;
+      background: var(--assistant);
+      padding: 8px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--panel-edge);
+      box-shadow: 0 6px 14px rgba(59, 38, 17, 0.12);
+      overflow: hidden;
+      contain: layout paint;
+      min-height: 34px;
+      max-width: fit-content;
+    }
+
+    .nano-bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.2;
+    }
+
+    .nano-bit {
+      position: absolute;
+      border-radius: 50%;
+      background: var(--brand);
+      transition: opacity 1s ease;
+    }
+
+    .nano-grid {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+      z-index: 1;
+    }
+
+    .nano-agent {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      transition: transform 1s ease-in-out;
+      padding: 0.5px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 1px;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      box-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.03);
+    }
+
+    [data-theme="dark"] .nano-agent {
+      background: rgba(40, 30, 20, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .nano-pixel {
+      width: 100%;
+      height: 100%;
+      opacity: 0.8;
+      transition: background-color 0.2s, opacity 0.2s;
+    }
+
+    .nano-text {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      z-index: 1;
+      padding-right: 2px;
+    }
+
+    .nano-label {
+      color: var(--ink);
+      font-weight: 600;
+      font-size: 0.82rem;
+      line-height: 1;
+    }
+
+    .nano-time {
+      color: var(--ink-soft);
+      font-size: 0.68rem;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.9;
+    }
+
     .theme-toggle {
       padding: 6px 10px;
       font-size: 0.77rem;
@@ -536,6 +625,116 @@
     .assistant {
       align-self: flex-start;
       background: var(--assistant);
+      white-space: normal;
+    }
+
+    .assistant p {
+      margin: 0 0 0.65rem;
+    }
+
+    .assistant p:last-child {
+      margin-bottom: 0;
+    }
+
+    .assistant h1,
+    .assistant h2,
+    .assistant h3,
+    .assistant h4,
+    .assistant h5,
+    .assistant h6 {
+      margin: 0.25rem 0 0.5rem;
+      line-height: 1.25;
+    }
+
+    .assistant h1 {
+      font-size: 1.18rem;
+    }
+
+    .assistant h2 {
+      font-size: 1.1rem;
+    }
+
+    .assistant h3 {
+      font-size: 1.02rem;
+    }
+
+    .assistant ul {
+      margin: 0.25rem 0 0.65rem 1.2rem;
+      padding: 0;
+    }
+
+    .assistant li {
+      margin: 0.2rem 0;
+    }
+
+    .assistant blockquote {
+      margin: 0.35rem 0 0.65rem;
+      padding: 0.15rem 0.75rem;
+      border-left: 3px solid var(--panel-edge);
+      color: var(--ink-soft);
+    }
+
+    .assistant code {
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      font-size: 0.86em;
+      background: var(--sand-1);
+      border: 1px solid var(--panel-edge);
+      border-radius: 6px;
+      padding: 0.05rem 0.35rem;
+    }
+
+    .assistant pre {
+      margin: 0.35rem 0 0.7rem;
+      padding: 0.55rem 0.7rem;
+      border-radius: 10px;
+      border: 1px solid var(--panel-edge);
+      background: var(--sand-1);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .assistant pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      border-radius: 0;
+      font-size: 0.84rem;
+    }
+
+    .assistant a {
+      color: var(--brand);
+    }
+
+    .assistant .md-table-wrap {
+      margin: 0.35rem 0 0.7rem;
+      overflow-x: auto;
+    }
+
+    .assistant table {
+      width: 100%;
+      min-width: 320px;
+      border-collapse: collapse;
+    }
+
+    .assistant th,
+    .assistant td {
+      border: 1px solid var(--panel-edge);
+      padding: 0.35rem 0.5rem;
+      vertical-align: top;
+    }
+
+    .assistant th {
+      background: var(--sand-1);
+      font-weight: 600;
+      text-align: left;
+    }
+
+    .assistant .md-align-right {
+      text-align: right;
+    }
+
+    .assistant .md-align-center {
+      text-align: center;
     }
 
     .error {
@@ -804,6 +1003,10 @@
       .composer button {
         width: 100%;
       }
+
+      .nano-label {
+        font-size: 0.72rem;
+      }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -834,6 +1037,12 @@
       textarea,
       .channel-tag,
       .update-banner {
+        transition: none;
+      }
+
+      .nano-bit,
+      .nano-agent,
+      .nano-pixel {
         transition: none;
       }
     }
@@ -912,7 +1121,16 @@
             </div>
           </div>
 
-          <div id="chat" class="chat"></div>
+          <div id="chat" class="chat">
+            <div id="nano-agents" class="nano-agents" aria-live="polite">
+              <div class="nano-bg" id="nano-bg"></div>
+              <div class="nano-grid" id="nano-grid"></div>
+              <div class="nano-text">
+                <span class="nano-label">Typing...</span>
+                <span id="nano-time" class="nano-time">0s</span>
+              </div>
+            </div>
+          </div>
 
           <div class="controls">
             <div class="composer">
@@ -1087,6 +1305,9 @@
     let socket = null;
     let reconnectTimer = null;
     let providerData = [];
+    let nanoTimerInterval = null;
+    let nanoElapsed = 0;
+    let thinkingTimeout = null;
 
     // Pre-fill saved key
     keyGatewayEl.value = gatewayKey;
@@ -1138,12 +1359,312 @@
       }
     }
 
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function sanitizeUrl(rawUrl) {
+      const candidate = String(rawUrl || "").trim();
+      if (!candidate) return null;
+      if (candidate.startsWith("/") || candidate.startsWith("#")) {
+        return candidate;
+      }
+      try {
+        const parsed = new URL(candidate, window.location.origin);
+        if (["http:", "https:", "mailto:"].includes(parsed.protocol)) {
+          return parsed.href;
+        }
+      } catch {
+        // Ignore invalid URLs.
+      }
+      return null;
+    }
+
+    function renderInlineMarkdown(input) {
+      const replacements = [];
+      let text = String(input || "");
+
+      text = text.replace(/`([^`]+)`/g, (_, code) => {
+        const idx = replacements.push(`<code>${escapeHtml(code)}</code>`) - 1;
+        return `\u0000${idx}\u0000`;
+      });
+
+      text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
+        const safeHref = sanitizeUrl(href);
+        const safeLabel = escapeHtml(label);
+        const html = safeHref
+          ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${safeLabel}</a>`
+          : safeLabel;
+        const idx = replacements.push(html) - 1;
+        return `\u0000${idx}\u0000`;
+      });
+
+      text = escapeHtml(text);
+      text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      text = text.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+      text = text.replace(/_([^_]+)_/g, "<em>$1</em>");
+      text = text.replace(/~~([^~]+)~~/g, "<del>$1</del>");
+
+      return text.replace(/\u0000(\d+)\u0000/g, (_, idx) => replacements[Number(idx)] || "");
+    }
+
+    function renderMarkdown(text) {
+      const normalized = String(text || "").replace(/\r\n/g, "\n");
+      if (!normalized.trim()) return "";
+
+      const codeBlocks = [];
+      const withCodeTokens = normalized.replace(/```([\w-]+)?\n([\s\S]*?)```/g, (_, lang = "", code) => {
+        const language = String(lang).trim();
+        const classAttr = language ? ` class="language-${escapeHtml(language)}"` : "";
+        const codeHtml = `<pre><code${classAttr}>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`;
+        const idx = codeBlocks.push(codeHtml) - 1;
+        return `@@CODEBLOCK_${idx}@@`;
+      });
+
+      const parseTableCells = (line) => {
+        const raw = String(line || "").trim();
+        if (!raw.includes("|")) return null;
+        let row = raw;
+        if (row.startsWith("|")) row = row.slice(1);
+        if (row.endsWith("|")) row = row.slice(0, -1);
+        const cells = row.split("|").map((cell) => cell.trim());
+        return cells.length ? cells : null;
+      };
+
+      const isTableDelimiterRow = (line) => {
+        const cells = parseTableCells(line);
+        if (!cells || cells.length === 0) return false;
+        return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+      };
+
+      const parseAlignments = (line, width) => {
+        const cells = parseTableCells(line) || [];
+        return Array.from({ length: width }, (_, idx) => {
+          const cell = cells[idx] || "";
+          const left = cell.startsWith(":");
+          const right = cell.endsWith(":");
+          if (left && right) return "center";
+          if (right) return "right";
+          return "left";
+        });
+      };
+
+      const lines = withCodeTokens.split("\n");
+      const chunks = [];
+      const paragraph = [];
+      let inList = false;
+
+      const closeList = () => {
+        if (inList) {
+          chunks.push("</ul>");
+          inList = false;
+        }
+      };
+
+      const flushParagraph = () => {
+        if (!paragraph.length) return;
+        const body = renderInlineMarkdown(paragraph.join("\n")).replace(/\n/g, "<br>");
+        chunks.push(`<p>${body}</p>`);
+        paragraph.length = 0;
+      };
+
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        const codeMatch = /^@@CODEBLOCK_(\d+)@@$/.exec(trimmed);
+        const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+        const quoteMatch = /^>\s?(.*)$/.exec(trimmed);
+        const listMatch = /^[-*]\s+(.+)$/.exec(trimmed);
+        const headerCells = parseTableCells(trimmed);
+
+        if (!trimmed) {
+          flushParagraph();
+          closeList();
+          continue;
+        }
+        if (codeMatch) {
+          flushParagraph();
+          closeList();
+          chunks.push(codeBlocks[Number(codeMatch[1])] || "");
+          continue;
+        }
+        if (headingMatch) {
+          flushParagraph();
+          closeList();
+          const level = headingMatch[1].length;
+          chunks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+          continue;
+        }
+        if (quoteMatch) {
+          flushParagraph();
+          closeList();
+          chunks.push(`<blockquote>${renderInlineMarkdown(quoteMatch[1])}</blockquote>`);
+          continue;
+        }
+        if (listMatch) {
+          flushParagraph();
+          if (!inList) {
+            chunks.push("<ul>");
+            inList = true;
+          }
+          chunks.push(`<li>${renderInlineMarkdown(listMatch[1])}</li>`);
+          continue;
+        }
+        if (headerCells && i + 1 < lines.length && isTableDelimiterRow(lines[i + 1])) {
+          flushParagraph();
+          closeList();
+
+          const colCount = headerCells.length;
+          const alignments = parseAlignments(lines[i + 1], colCount);
+          const renderRow = (cells, tag) =>
+            Array.from({ length: colCount }, (_, colIdx) => {
+              const align = alignments[colIdx] || "left";
+              const alignClass = `md-align-${align}`;
+              const value = cells[colIdx] || "";
+              return `<${tag} class="${alignClass}">${renderInlineMarkdown(value)}</${tag}>`;
+            }).join("");
+
+          const bodyRows = [];
+          let rowIdx = i + 2;
+          while (rowIdx < lines.length) {
+            const rowText = lines[rowIdx].trim();
+            if (!rowText) break;
+            if (isTableDelimiterRow(rowText)) break;
+            const rowCells = parseTableCells(rowText);
+            if (!rowCells) break;
+            bodyRows.push(rowCells);
+            rowIdx += 1;
+          }
+
+          const thead = `<thead><tr>${renderRow(headerCells, "th")}</tr></thead>`;
+          const tbody = bodyRows.length
+            ? `<tbody>${bodyRows.map((cells) => `<tr>${renderRow(cells, "td")}</tr>`).join("")}</tbody>`
+            : "";
+          chunks.push(`<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`);
+          i = rowIdx - 1;
+          continue;
+        }
+
+        closeList();
+        paragraph.push(line);
+      }
+
+      flushParagraph();
+      closeList();
+
+      return chunks
+        .join("")
+        .replace(/@@CODEBLOCK_(\d+)@@/g, (_, idx) => codeBlocks[Number(idx)] || "");
+    }
+
+    function setMessageContent(div, kind, text) {
+      if (kind === "assistant") {
+        div.dataset.rawText = text;
+        div.innerHTML = renderMarkdown(text);
+        return;
+      }
+      delete div.dataset.rawText;
+      div.textContent = text;
+    }
+
     function appendMessage(kind, text) {
       const div = document.createElement("div");
       div.className = `msg ${kind}`;
-      div.textContent = text;
-      chatEl.appendChild(div);
+      setMessageContent(div, kind, text);
+      const thinkingWidget = document.getElementById("nano-agents");
+      const widgetVisible = thinkingWidget
+        && thinkingWidget.parentElement === chatEl
+        && thinkingWidget.style.display !== "none";
+
+      if (widgetVisible) {
+        chatEl.insertBefore(div, thinkingWidget);
+      } else {
+        chatEl.appendChild(div);
+      }
       chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function setAgentThinking(thinking) {
+      const widget = document.getElementById("nano-agents");
+      const timeEl = document.getElementById("nano-time");
+      if (!widget) return;
+
+      if (thinking) {
+        widget.style.display = "inline-flex";
+        chatEl.appendChild(widget);
+        chatEl.scrollTop = chatEl.scrollHeight;
+        if (!nanoTimerInterval) {
+          nanoElapsed = 0;
+          if (timeEl) timeEl.textContent = "0s";
+          nanoTimerInterval = setInterval(() => {
+            nanoElapsed += 1;
+            if (timeEl) timeEl.textContent = `${nanoElapsed}s`;
+          }, 1000);
+        }
+      } else {
+        widget.style.display = "none";
+        if (nanoTimerInterval) {
+          clearInterval(nanoTimerInterval);
+          nanoTimerInterval = null;
+        }
+        if (thinkingTimeout) {
+          clearTimeout(thinkingTimeout);
+          thinkingTimeout = null;
+        }
+      }
+    }
+
+    function resetThinkingDebounce() {
+      setAgentThinking(true);
+      if (thinkingTimeout) clearTimeout(thinkingTimeout);
+      thinkingTimeout = setTimeout(() => {
+        setAgentThinking(false);
+      }, 1500);
+    }
+
+    function appendOrUpdateStreamMessage(role, text) {
+      let isStreamChunk = false;
+      let parsedContent = "";
+
+      try {
+        const lines = text.split("\n");
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            const data = JSON.parse(trimmed);
+            if (typeof data.content === "string") {
+              isStreamChunk = true;
+              parsedContent += data.content;
+            }
+          }
+        }
+      } catch {
+        // Fall back to plain assistant message handling.
+      }
+
+      if (!isStreamChunk) {
+        appendMessage(role, text);
+        setAgentThinking(false);
+        return;
+      }
+
+      resetThinkingDebounce();
+
+      const messages = chatEl.querySelectorAll(".msg.assistant");
+      if (messages.length > 0) {
+        const last = messages[messages.length - 1];
+        const nextRaw = `${last.dataset.rawText || ""}${parsedContent}`;
+        setMessageContent(last, role, nextRaw);
+        chatEl.scrollTop = chatEl.scrollHeight;
+      } else {
+        appendMessage(role, parsedContent);
+      }
     }
 
     async function refreshStatus() {
@@ -1302,9 +1823,10 @@
           refreshStatus();
           break;
         case "message":
-          appendMessage("assistant", evt.content || "(empty response)");
+          appendOrUpdateStreamMessage("assistant", evt.content || "(empty response)");
           break;
         case "error":
+          setAgentThinking(false);
           appendMessage("error", `${evt.code || "error"}: ${evt.message || "unknown error"}`);
           break;
         default:
@@ -1331,11 +1853,13 @@
       socket.onmessage = (ev) => handleServerEvent(ev.data);
 
       socket.onclose = () => {
+        setAgentThinking(false);
         setConnectionState(false);
         scheduleReconnect();
       };
 
       socket.onerror = () => {
+        setAgentThinking(false);
         setConnectionState(false);
       };
     }
@@ -1364,6 +1888,7 @@
       }
 
       appendMessage("user", content);
+      setAgentThinking(true);
       const msg = { content };
       const pid = providerSelect.value;
       if (pid) msg.provider = pid;
@@ -1385,6 +1910,7 @@
     });
 
     clearBtn.addEventListener("click", () => {
+      setAgentThinking(false);
       chatEl.innerHTML = "";
       setSession("");
       reconnectFresh();
@@ -1484,7 +2010,96 @@
       }
     }
 
+    function initNanoAgents() {
+      const bg = document.getElementById("nano-bg");
+      const grid = document.getElementById("nano-grid");
+      const widget = document.getElementById("nano-agents");
+      if (!bg || !grid) return;
+      if (widget) widget.style.display = "none";
+
+      const colors = ["var(--brand)", "var(--brand-2)", "var(--online)", "var(--accent-line)"];
+      const bits = [];
+      for (let i = 0; i < 6; i++) {
+        const bit = document.createElement("div");
+        bit.className = "nano-bit";
+        const size = Math.random() * 2 + 1;
+        bit.style.width = `${size}px`;
+        bit.style.height = `${size}px`;
+        bit.style.left = `${Math.random() * 100}%`;
+        bit.style.top = `${Math.random() * 100}%`;
+        bit.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        bit.style.opacity = "0";
+        bg.appendChild(bit);
+        bits.push({ el: bit, id: Math.random() });
+      }
+
+      setInterval(() => {
+        bits.forEach((b) => {
+          if (Math.random() > 0.95) {
+            b.el.style.left = `${Math.random() * 100}%`;
+            b.el.style.top = `${Math.random() * 100}%`;
+            b.el.style.opacity = "0";
+          } else {
+            b.el.style.opacity = String(Math.sin(Date.now() / 1500 + b.id * 10) * 0.1 + 0.1);
+          }
+        });
+      }, 250);
+
+      const agentColors = [
+        ["var(--brand)", "var(--brand-2)"],
+        ["var(--online)", "#4ade80"],
+        ["var(--warn-text)", "var(--warn-edge)"],
+        ["var(--ink-soft)", "var(--ink)"]
+      ];
+
+      const agentEls = [];
+      let positions = [0, 1, 2, 3];
+
+      for (let i = 0; i < 4; i++) {
+        const agent = document.createElement("div");
+        agent.className = "nano-agent";
+        for (let p = 0; p < 4; p++) {
+          const pixel = document.createElement("div");
+          pixel.className = "nano-pixel";
+          agent.appendChild(pixel);
+        }
+        grid.appendChild(agent);
+        agentEls.push({ el: agent, colors: agentColors[i] });
+      }
+
+      setInterval(() => {
+        agentEls.forEach((a) => {
+          const pixels = a.el.children;
+          for (let i = 0; i < pixels.length; i++) {
+            pixels[i].style.backgroundColor = a.colors[Math.floor(Math.random() * a.colors.length)];
+            pixels[i].style.opacity = String(0.7 + Math.random() * 0.3);
+          }
+        });
+      }, 700);
+
+      function getCoords(index) {
+        return { x: (index % 2) * 12, y: Math.floor(index / 2) * 12 };
+      }
+
+      function updatePositions() {
+        agentEls.forEach((a, i) => {
+          const pos = positions[i];
+          const coords = getCoords(pos);
+          a.el.style.transform = `translate(${coords.x}px, ${coords.y}px)`;
+        });
+      }
+
+      updatePositions();
+      setInterval(() => {
+        const next = [...positions];
+        next.unshift(next.pop());
+        positions = next;
+        updatePositions();
+      }, 2700);
+    }
+
     boot();
+    initNanoAgents();
   </script>
 </body>
 
