@@ -5,9 +5,7 @@ mod wizard;
 
 use std::path::PathBuf;
 
-#[cfg(unix)]
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use opencrust_security::RedactingWriter;
 use tracing_subscriber::EnvFilter;
