@@ -1173,40 +1173,13 @@
           </div>
         </section>
 
-        <!-- Structural Mockup for MCPs View -->
+        <!-- MCPs View — populated from GET /api/mcp -->
         <section class="panel panel-view" id="view-mcps" style="display: none;">
           <div class="settings-header">
-            <h2>MCPs Settings</h2>
-            <div class="actions">
-              <button class="primary" id="add-mcp-btn">Add New MCP</button>
-            </div>
+            <h2>MCPs</h2>
           </div>
           <div class="settings-body" id="mcps-list">
-            <!-- Mocked Active MCP -->
-            <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">server-filesystem</h3>
-                <span class="pill online">Running</span>
-              </div>
-              <div class="card-meta">npx -y @modelcontextprotocol/server-filesystem /tmp</div>
-              <div class="card-actions">
-                <button>Restart</button>
-                <button class="btn-danger">Remove</button>
-              </div>
-            </div>
-
-            <!-- Mocked Stopped MCP -->
-            <div class="card">
-              <div class="card-header">
-                <h3 class="card-title">server-github</h3>
-                <span class="pill offline">Stopped</span>
-              </div>
-              <div class="card-meta">npx -y @modelcontextprotocol/server-github</div>
-              <div class="card-actions">
-                <button>Start</button>
-                <button class="btn-danger">Remove</button>
-              </div>
-            </div>
+            <p style="color:var(--text-secondary)">Loading...</p>
           </div>
         </section>
 
@@ -2122,7 +2095,36 @@
     }
 
     navItems.chat.addEventListener("click", () => switchView("chat"));
-    navItems.mcps.addEventListener("click", () => switchView("mcps"));
+    navItems.mcps.addEventListener("click", () => {
+      switchView("mcps");
+      loadMcpServers();
+    });
+
+    async function loadMcpServers() {
+      const list = document.getElementById("mcps-list");
+      try {
+        const resp = await fetch("/api/mcp");
+        const data = await resp.json();
+        const servers = data.servers || [];
+        if (servers.length === 0) {
+          list.innerHTML = '<p style="color:var(--text-secondary)">No MCP servers configured. Add servers to config.yml.</p>';
+          return;
+        }
+        list.innerHTML = servers.map(s => {
+          const statusClass = s.connected ? "online" : "offline";
+          const statusText = s.connected ? "Connected" : "Disconnected";
+          return `<div class="card">
+            <div class="card-header">
+              <h3 class="card-title">${s.name}</h3>
+              <span class="pill ${statusClass}">${statusText}</span>
+            </div>
+            <div class="card-meta">${s.tools} tool${s.tools !== 1 ? "s" : ""} registered</div>
+          </div>`;
+        }).join("");
+      } catch (e) {
+        list.innerHTML = '<p style="color:var(--text-secondary)">Failed to load MCP servers.</p>';
+      }
+    }
     navItems.extensions.addEventListener("click", () => switchView("extensions"));
 
     // Boot: check if auth is required, then connect

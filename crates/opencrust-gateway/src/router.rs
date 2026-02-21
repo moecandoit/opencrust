@@ -57,6 +57,7 @@ pub fn build_router(
         .route("/api/sessions/{id}/messages", post(api::send_message))
         .route("/api/sessions/{id}/history", get(api::session_history))
         .route("/api/providers", get(list_providers).post(add_provider))
+        .route("/api/mcp", get(list_mcp_servers))
         // A2A protocol endpoints
         .route("/.well-known/agent.json", get(a2a::agent_card))
         .route("/a2a/tasks", post(a2a::create_task))
@@ -552,6 +553,28 @@ fn persist_api_key(vault_key: &str, value: &str) {
     if let Some(vault_path) = crate::bootstrap::default_vault_path() {
         opencrust_security::try_vault_set(&vault_path, vault_key, value);
     }
+}
+
+/// GET /api/mcp — list connected MCP servers with tool counts and status.
+async fn list_mcp_servers(
+    axum::extract::State(state): axum::extract::State<SharedState>,
+) -> axum::Json<serde_json::Value> {
+    let servers = if let Some(mgr) = &state.mcp_manager_arc {
+        let list = mgr.list_servers().await;
+        list.into_iter()
+            .map(|(name, tool_count, connected)| {
+                serde_json::json!({
+                    "name": name,
+                    "tools": tool_count,
+                    "connected": connected,
+                })
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    axum::Json(serde_json::json!({ "servers": servers }))
 }
 
 /// Read the cached latest version from ~/.opencrust/update-check.json.

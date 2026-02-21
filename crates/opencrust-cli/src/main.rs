@@ -333,8 +333,7 @@ fn kill_and_wait(pid: u32) -> bool {
     false
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Show update notice (non-blocking, from cache)
@@ -359,50 +358,79 @@ async fn main() -> Result<()> {
     config_loader.ensure_dirs()?;
     let config = config_loader.load()?;
 
+    // Handle daemon mode BEFORE creating the tokio runtime. The fork must
+    // happen before any async runtime is initialised, otherwise the child
+    // inherits stale kqueue/epoll FDs and spawned child processes fail
+    // with "Bad file descriptor".
+    let is_daemon = matches!(
+        &cli.command,
+        Commands::Start { daemon: true, .. } | Commands::Restart { daemon: true, .. }
+    );
+    if is_daemon {
+        let is_restart = matches!(&cli.command, Commands::Restart { .. });
+        let (host, port) = match &cli.command {
+            Commands::Start { host, port, .. } | Commands::Restart { host, port, .. } => {
+                (host.clone(), *port)
+            }
+            _ => unreachable!(),
+        };
+        let mut config = config;
+        config.gateway.host = host;
+        config.gateway.port = port;
+        if is_restart {
+            // Don't init tracing here — try_stop_daemon uses println!,
+            // and the daemon child will init its own subscriber after fork.
+            try_stop_daemon(config.gateway.port);
+        }
+        return start_daemon(config);
+    }
+
+    // All other commands run inside a tokio runtime.
+    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
+    rt.block_on(async_main(cli, config, config_loader, init_tracing))
+}
+
+async fn async_main(
+    cli: Cli,
+    config: opencrust_config::AppConfig,
+    config_loader: opencrust_config::ConfigLoader,
+    init_tracing: impl Fn(&str),
+) -> Result<()> {
     match cli.command {
-        Commands::Start { host, port, daemon } => {
+        Commands::Start { host, port, .. } => {
             let mut config = config;
             config.gateway.host = host;
             config.gateway.port = port;
-
-            if daemon {
-                start_daemon(config)?;
-            } else {
-                init_tracing(&cli.log_level);
-                banner::print_banner(
-                    &config.gateway.host,
-                    config.gateway.port,
-                    &config,
-                    config_loader.config_dir(),
-                );
-                update::spawn_background_check();
-                let server = opencrust_gateway::GatewayServer::new(config);
-                server.run().await?;
-            }
+            init_tracing(&cli.log_level);
+            banner::print_banner(
+                &config.gateway.host,
+                config.gateway.port,
+                &config,
+                config_loader.config_dir(),
+            );
+            update::spawn_background_check();
+            let server = opencrust_gateway::GatewayServer::new(config);
+            server.run().await?;
         }
         Commands::Stop => {
             init_tracing(&cli.log_level);
             stop_daemon(config.gateway.port)?;
         }
-        Commands::Restart { host, port, daemon } => {
+        Commands::Restart { host, port, .. } => {
             init_tracing(&cli.log_level);
             try_stop_daemon(port);
             let mut config = config;
             config.gateway.host = host;
             config.gateway.port = port;
-            if daemon {
-                start_daemon(config)?;
-            } else {
-                banner::print_banner(
-                    &config.gateway.host,
-                    config.gateway.port,
-                    &config,
-                    config_loader.config_dir(),
-                );
-                update::spawn_background_check();
-                let server = opencrust_gateway::GatewayServer::new(config);
-                server.run().await?;
-            }
+            banner::print_banner(
+                &config.gateway.host,
+                config.gateway.port,
+                &config,
+                config_loader.config_dir(),
+            );
+            update::spawn_background_check();
+            let server = opencrust_gateway::GatewayServer::new(config);
+            server.run().await?;
         }
         Commands::Status => {
             init_tracing(&cli.log_level);
@@ -855,7 +883,9 @@ fn start_daemon(config: opencrust_config::AppConfig) -> Result<()> {
 
             tracing::info!("daemon started (PID file: {})", pid_path.display());
 
-            // Build a new tokio runtime in the daemon process
+            // Build a fresh tokio runtime in the daemon child process.
+            // This is safe because daemonization happened before any runtime
+            // was created, so there are no stale kqueue/epoll FDs.
             let rt = tokio::runtime::Runtime::new()
                 .context("failed to create tokio runtime in daemon")?;
             rt.block_on(async {
