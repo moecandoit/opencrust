@@ -16,3 +16,4 @@ ring = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+keyring = { workspace = true }
