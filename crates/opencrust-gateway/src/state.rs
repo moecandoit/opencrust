@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -28,8 +30,23 @@ pub struct AppState {
     /// MCP manager wrapped in Arc for health monitoring.
     pub mcp_manager_arc: Option<Arc<opencrust_agents::McpManager>>,
     pub session_store: Option<Arc<Mutex<SessionStore>>>,
+    /// Runtime connection state for Google Workspace integration.
+    google_workspace_integration_connected: AtomicBool,
+    /// Connected Google account email (if known).
+    google_workspace_email: RwLock<Option<String>>,
+    /// Pending Google OAuth state values (anti-CSRF), keyed by state token.
+    google_oauth_states: DashMap<String, Instant>,
+    /// Runtime Google OAuth client configuration set from the web UI.
+    google_oauth_runtime_config: RwLock<Option<GoogleOAuthRuntimeConfig>>,
     /// Receives hot-reloaded config updates. `None` if watcher is not active.
     config_rx: Option<watch::Receiver<AppConfig>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GoogleOAuthRuntimeConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: Option<String>,
 }
 
 /// Per-connection session tracking.
@@ -44,8 +61,6 @@ pub struct SessionState {
     pub created_at: Instant,
     /// Last time the session had activity (message or pong).
     pub last_active: Instant,
-    /// Rolling conversation summary for context recovery.
-    pub summary: Option<String>,
 }
 
 impl AppState {
@@ -59,6 +74,10 @@ impl AppState {
             mcp_manager: None,
             mcp_manager_arc: None,
             session_store: None,
+            google_workspace_integration_connected: AtomicBool::new(false),
+            google_workspace_email: RwLock::new(None),
+            google_oauth_states: DashMap::new(),
+            google_oauth_runtime_config: RwLock::new(None),
             config_rx: None,
         }
     }
@@ -82,6 +101,69 @@ impl AppState {
         }
     }
 
+    /// Read current Google Workspace integration connection state.
+    pub fn google_workspace_connected(&self) -> bool {
+        self.google_workspace_integration_connected
+            .load(Ordering::Relaxed)
+    }
+
+    /// Update Google Workspace integration connection state.
+    pub fn set_google_workspace_connected(&self, connected: bool) {
+        self.google_workspace_integration_connected
+            .store(connected, Ordering::Relaxed);
+        if !connected && let Ok(mut email) = self.google_workspace_email.write() {
+            *email = None;
+        }
+    }
+
+    /// Return the connected Google account email if available.
+    pub fn google_workspace_email(&self) -> Option<String> {
+        self.google_workspace_email
+            .read()
+            .ok()
+            .and_then(|email| email.clone())
+    }
+
+    /// Set Google integration identity and mark connected.
+    pub fn set_google_workspace_identity(&self, email: Option<String>) {
+        self.google_workspace_integration_connected
+            .store(true, Ordering::Relaxed);
+        if let Ok(mut slot) = self.google_workspace_email.write() {
+            *slot = email;
+        }
+    }
+
+    /// Create and track a one-time OAuth state token.
+    pub fn issue_google_oauth_state(&self) -> String {
+        let state = Uuid::new_v4().to_string();
+        self.google_oauth_states
+            .insert(state.clone(), Instant::now());
+        state
+    }
+
+    /// Validate and consume a pending OAuth state token.
+    pub fn consume_google_oauth_state(&self, state: &str, max_age: Duration) -> bool {
+        self.google_oauth_states
+            .remove(state)
+            .map(|(_, created_at)| created_at.elapsed() <= max_age)
+            .unwrap_or(false)
+    }
+
+    /// Set runtime Google OAuth config from UI.
+    pub fn set_google_oauth_runtime_config(&self, config: GoogleOAuthRuntimeConfig) {
+        if let Ok(mut slot) = self.google_oauth_runtime_config.write() {
+            *slot = Some(config);
+        }
+    }
+
+    /// Read runtime Google OAuth config from memory.
+    pub fn google_oauth_runtime_config(&self) -> Option<GoogleOAuthRuntimeConfig> {
+        self.google_oauth_runtime_config
+            .read()
+            .ok()
+            .and_then(|cfg| cfg.clone())
+    }
+
     pub fn create_session(&self) -> String {
         let id = Uuid::new_v4().to_string();
         self.create_session_with_id(id.clone());
@@ -102,7 +184,6 @@ impl AppState {
                 connected: true,
                 created_at: now,
                 last_active: now,
-                summary: None,
             },
         );
     }
@@ -114,20 +195,6 @@ impl AppState {
             Some("bus:shared-global".to_string())
         } else {
             None
-        }
-    }
-
-    /// Return the current summary for a session, if any.
-    pub fn session_summary(&self, session_id: &str) -> Option<String> {
-        self.sessions
-            .get(session_id)
-            .and_then(|s| s.summary.clone())
-    }
-
-    /// Update the rolling conversation summary for a session.
-    pub fn update_session_summary(&self, session_id: &str, summary: &str) {
-        if let Some(mut session) = self.sessions.get_mut(session_id) {
-            session.summary = Some(summary.to_string());
         }
     }
 
@@ -179,7 +246,6 @@ impl AppState {
             .unwrap_or_else(|| serde_json::json!({}));
 
         let mut loaded_history = Vec::new();
-        let mut loaded_summary: Option<String> = None;
         {
             let guard = store.lock().await;
             if let Err(e) = guard.upsert_session(session_id, channel, user, &metadata) {
@@ -208,24 +274,14 @@ impl AppState {
                         warn!("failed to load session history for {session_id}: {e}");
                     }
                 }
-
-                // Load summary from session metadata
-                if let Ok(Some(meta)) = guard.load_session_metadata(session_id) {
-                    loaded_summary = meta
-                        .get("summary")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                }
             }
         }
 
-        if should_load && let Some(mut session) = self.sessions.get_mut(session_id) {
-            if !loaded_history.is_empty() {
-                session.history = loaded_history;
-            }
-            if loaded_summary.is_some() && session.summary.is_none() {
-                session.summary = loaded_summary;
-            }
+        if should_load
+            && !loaded_history.is_empty()
+            && let Some(mut session) = self.sessions.get_mut(session_id)
+        {
+            session.history = loaded_history;
         }
     }
 
@@ -266,17 +322,10 @@ impl AppState {
 
         let channel = channel_id.unwrap_or("web");
         let user = user_id.unwrap_or("anonymous");
-
-        // Build metadata including continuity key and summary if present
-        let summary = self.session_summary(session_id);
-        let mut meta_map = serde_json::Map::new();
-        if let Some(k) = self.continuity_key(user_id) {
-            meta_map.insert("continuity_key".to_string(), serde_json::json!(k));
-        }
-        if let Some(s) = &summary {
-            meta_map.insert("summary".to_string(), serde_json::json!(s));
-        }
-        let metadata = serde_json::Value::Object(meta_map);
+        let metadata = self
+            .continuity_key(user_id)
+            .map(|k| serde_json::json!({ "continuity_key": k }))
+            .unwrap_or_else(|| serde_json::json!({}));
 
         let guard = store.lock().await;
         if let Err(e) = guard.upsert_session(session_id, channel, user, &metadata) {
@@ -300,11 +349,6 @@ impl AppState {
             &serde_json::json!({ "channel_id": channel, "user_id": user }),
         ) {
             warn!("failed to persist assistant message for {session_id}: {e}");
-        }
-
-        // Prune old messages to prevent unbounded DB growth (keep last 500)
-        if let Err(e) = guard.prune_old_messages(session_id, 500) {
-            warn!("failed to prune old messages for {session_id}: {e}");
         }
     }
 

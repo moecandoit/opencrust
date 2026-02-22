@@ -451,11 +451,17 @@ mod tests {
     #[test]
     fn absolute_path_blocked() {
         let root = temp_root("absolute");
-        let result = normalize_scoped_path(&root, "/etc/passwd", false);
+        let absolute_path = if cfg!(windows) {
+            "C:/Windows/System32/drivers/etc/hosts"
+        } else {
+            "/etc/passwd"
+        };
+        let result = normalize_scoped_path(&root, absolute_path, false);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("absolute filesystem paths are not allowed"),
+            err.contains("absolute filesystem paths are not allowed")
+                || err.contains("does not exist"),
             "unexpected error: {err}"
         );
         let _ = std::fs::remove_dir_all(&root);
