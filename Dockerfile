@@ -23,7 +23,7 @@ RUN useradd -m -s /bin/bash opencrust
 USER opencrust
 WORKDIR /home/opencrust
 
-EXPOSE 3000
+EXPOSE 3888
 
 ENTRYPOINT ["opencrust"]
 CMD ["start", "--host", "0.0.0.0"]

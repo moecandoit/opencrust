@@ -6,6 +6,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-02-23
+
+### Fixed
+- Fix daemon mode panic and wire live MCP panel in webchat
+
+### Changed
+- Update docs: add all 14 LLM providers, MCP page, and tools page
+
+## [0.1.10] - 2026-02-22
+
+### Added
+- Add 8 OpenAI-compatible LLM providers (Gemini, Falcon, Jais, Qwen, Yi, Cohere, MiniMax, Moonshot)
+
+### Fixed
+- Fix Windows build: remove unix gate on anyhow::Context import
+
+## [0.1.9] - 2026-02-21
+
+### Added
+- Add DeepSeek and Mistral providers
+
+### Fixed
+- Fix Ollama Docker port binding
+
+## [0.1.8] - 2026-02-20
+
+### Added
+- Render markdown and tables in webchat responses
+- Implement persistent 3-column webchat layout
+- Add structural mockups for MCPs and Extensions views
+- Enable hot-reloading for webchat.html during local dev
+
+### Changed
+- Add SECURITY.md, CODEOWNERS, and pin all GitHub Actions to commit SHAs
+
+### Fixed
+- Fix restart/stop when multiple PIDs on port
+- Add Windows support for daemon management
+
+## [0.1.7] - 2026-02-18
+
+### Fixed
+- Fix XSS in webchat and make update checksum mandatory
+
+### Changed
+- Add Discord invite link to README
+
+## [0.1.6] - 2026-02-18
+
+### Added
+- Startup banner with Ferris logo and config summary
+- Sandy theme and dark mode toggle for webchat
+- Telegram group chat support, session mapping, and anonymous admin support
+- Docker Compose deployment examples and .env.example
+- mdBook documentation structure
+
+### Fixed
+- Fix restart/stop failing when no PID file exists
+- Fix daemon stop logic on Windows to avoid unsafe PID termination
+- Fix plugin path helper and Windows STILL_ACTIVE import
+
+### Changed
+- Improve native Windows compatibility and CLI path handling
+- Refine webchat layout and sidebar hierarchy
+
 ## [0.1.5] - 2026-02-21
 
 ### Changed
