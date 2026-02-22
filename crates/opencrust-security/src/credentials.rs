@@ -25,7 +25,7 @@ struct VaultFile {
 /// Encrypted key-value credential store backed by AES-256-GCM.
 ///
 /// Credentials are kept in memory as a plain `HashMap` after decryption.
-/// Call [`save`] to persist changes back to disk.
+/// Call [`CredentialVault::save`] to persist changes back to disk.
 pub struct CredentialVault {
     path: PathBuf,
     derived_key: Vec<u8>,
