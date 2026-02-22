@@ -7,8 +7,10 @@ use std::net::{IpAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wasmtime::{Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
-use wasmtime_wasi::preview1::{self, WasiP1Ctx};
-use wasmtime_wasi::{DirPerms, FilePerms, SocketAddrUse, WasiCtxBuilder};
+use wasmtime_wasi::p1::{self, WasiP1Ctx};
+use wasmtime_wasi::p2::pipe::{MemoryInputPipe, MemoryOutputPipe};
+use wasmtime_wasi::sockets::SocketAddrUse;
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
 pub struct WasmRuntime {
     manifest: PluginManifest,
@@ -182,7 +184,7 @@ impl Plugin for WasmRuntime {
 
     async fn execute(&self, input: PluginInput) -> Result<PluginOutput> {
         let mut linker = Linker::new(&self.engine);
-        preview1::add_to_linker_async(&mut linker, |s: &mut WasmState| &mut s.ctx)
+        p1::add_to_linker_async(&mut linker, |s: &mut WasmState| &mut s.ctx)
             .map_err(|e| Error::Plugin(format!("linker error: {e}")))?;
 
         let mut builder = WasiCtxBuilder::new();
@@ -198,14 +200,14 @@ impl Plugin for WasmRuntime {
 
         // Output capture via bounded pipes.
         let max_output_bytes = self.manifest.limits.max_output_bytes.max(1);
-        let stdout = wasmtime_wasi::pipe::MemoryOutputPipe::new(max_output_bytes);
-        let stderr = wasmtime_wasi::pipe::MemoryOutputPipe::new(max_output_bytes);
+        let stdout = MemoryOutputPipe::new(max_output_bytes);
+        let stderr = MemoryOutputPipe::new(max_output_bytes);
         builder.stdout(stdout.clone());
         builder.stderr(stderr.clone());
 
         // Input
         if !input.stdin.is_empty() {
-            let stdin = wasmtime_wasi::pipe::MemoryInputPipe::new(input.stdin.clone());
+            let stdin = MemoryInputPipe::new(input.stdin.clone());
             builder.stdin(stdin);
         }
 

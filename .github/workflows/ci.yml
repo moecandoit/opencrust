@@ -70,7 +70,7 @@ jobs:
         with:
           toolchain: stable
       - run: cargo install cargo-audit
-      - run: cargo audit --ignore RUSTSEC-2025-0118 --ignore RUSTSEC-2025-0046
+      - run: cargo audit
 
   deny:
     name: License & Dependency Check
