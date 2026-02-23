@@ -1882,20 +1882,29 @@ async fn compact_messages(
 
 /// The bootstrap instruction injected when no dna.md exists yet.
 /// The agent will ask the user a few questions and write dna.md itself.
-const BOOTSTRAP_INSTRUCTION: &str = "\
-IMPORTANT: You have not been personalized yet. Your FIRST priority before doing \
-ANYTHING else is to collect the user's preferences. Do NOT answer their question yet. \
-Instead, introduce yourself briefly and ask:
-1. What should I call you?
-2. How do you prefer I communicate - casual, professional, or something else?
-3. Any specific guidelines or things to avoid?
-
-Keep it to 2-3 sentences. Once they answer, use the file_write tool to create \
-~/.opencrust/dna.md with a markdown document capturing their preferences, then \
-continue helping with whatever they originally asked.
-
-If the user explicitly says to skip or ignores the questions twice, write a minimal \
-dna.md with sensible defaults and move on.";
+/// Build the bootstrap instruction with the resolved config directory path.
+/// We can't use a const because `~` doesn't expand in file paths and the
+/// home directory must be resolved at runtime.
+fn bootstrap_instruction() -> String {
+    let config_dir = dirs::home_dir()
+        .map(|h| h.join(".opencrust"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".opencrust"));
+    let dna_path = config_dir.join("dna.md");
+    format!(
+        "IMPORTANT: You have not been personalized yet. Your FIRST priority before doing \
+         ANYTHING else is to collect the user's preferences. Do NOT answer their question yet. \
+         Instead, introduce yourself briefly and ask:\n\
+         1. What should I call you?\n\
+         2. How do you prefer I communicate - casual, professional, or something else?\n\
+         3. Any specific guidelines or things to avoid?\n\n\
+         Keep it to 2-3 sentences. Once they answer, use the file_write tool to create \
+         {} with a markdown document capturing their preferences, then \
+         continue helping with whatever they originally asked.\n\n\
+         If the user explicitly says to skip or ignores the questions twice, write a minimal \
+         dna.md with sensible defaults and move on.",
+        dna_path.display()
+    )
+}
 
 /// Build the system prompt by combining DNA content, system prompt, memory context,
 /// and conversation summary. When no DNA content exists, a bootstrap instruction is
@@ -1910,7 +1919,7 @@ fn build_system_prompt(
     if let Some(dna) = dna_content {
         parts.push(dna.to_string());
     } else {
-        parts.push(BOOTSTRAP_INSTRUCTION.to_string());
+        parts.push(bootstrap_instruction());
     }
     if let Some(prompt) = system_prompt {
         parts.push(prompt.clone());

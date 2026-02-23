@@ -19,6 +19,7 @@ futures = { workspace = true }
 bytes = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 chrono = { workspace = true, features = ["serde"] }
+dirs = "6"
 
 rmcp = { workspace = true, features = ["client", "transport-child-process", "transport-io"], optional = true }
 
