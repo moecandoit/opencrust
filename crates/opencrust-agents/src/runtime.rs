@@ -25,6 +25,7 @@ pub struct AgentRuntime {
     embeddings: Option<Arc<dyn EmbeddingProvider>>,
     tools: Vec<Box<dyn Tool>>,
     system_prompt: Option<String>,
+    soul_content: RwLock<Option<String>>,
     max_tokens: Option<u32>,
     max_context_tokens: Option<usize>,
     recall_limit: usize,
@@ -40,6 +41,7 @@ impl AgentRuntime {
             embeddings: None,
             tools: Vec::new(),
             system_prompt: None,
+            soul_content: RwLock::new(None),
             max_tokens: None,
             max_context_tokens: None,
             recall_limit: 10,
@@ -53,6 +55,17 @@ impl AgentRuntime {
 
     pub fn set_system_prompt(&mut self, prompt: String) {
         self.system_prompt = Some(prompt);
+    }
+
+    /// Set the soul content (personality/tone from soul.md). Uses `&self` via RwLock
+    /// so it works after Arc wrapping for hot-reload.
+    pub fn set_soul_content(&self, content: Option<String>) {
+        *self.soul_content.write().unwrap() = content;
+    }
+
+    /// Get a clone of the current soul content.
+    pub fn soul_content(&self) -> Option<String> {
+        self.soul_content.read().unwrap().clone()
     }
 
     pub fn set_max_tokens(&mut self, max_tokens: u32) {
@@ -500,12 +513,13 @@ impl AgentRuntime {
             _ => None,
         };
 
-        let system = match (&effective_system_prompt, memory_context) {
-            (Some(prompt), Some(ctx)) => Some(format!("{prompt}\n\n{ctx}")),
-            (Some(prompt), None) => Some(prompt.clone()),
-            (None, Some(ctx)) => Some(ctx),
-            (None, None) => None,
-        };
+        let soul = self.soul_content();
+        let system = build_system_prompt(
+            soul.as_deref(),
+            &effective_system_prompt,
+            memory_context.as_deref(),
+            None,
+        );
 
         let tool_defs = self.tool_definitions();
 
@@ -641,7 +655,9 @@ impl AgentRuntime {
             _ => None,
         };
 
+        let soul = self.soul_content();
         let system = build_system_prompt(
+            soul.as_deref(),
             &effective_system_prompt,
             memory_context.as_deref(),
             session_summary,
@@ -669,6 +685,7 @@ impl AgentRuntime {
 
         let system = if new_summary.is_some() {
             build_system_prompt(
+                soul.as_deref(),
                 &effective_system_prompt,
                 memory_context.as_deref(),
                 new_summary.as_deref(),
@@ -784,12 +801,13 @@ impl AgentRuntime {
             _ => None,
         };
 
-        let system = match (&self.system_prompt, memory_context) {
-            (Some(prompt), Some(ctx)) => Some(format!("{prompt}\n\n{ctx}")),
-            (Some(prompt), None) => Some(prompt.clone()),
-            (None, Some(ctx)) => Some(ctx),
-            (None, None) => None,
-        };
+        let soul = self.soul_content();
+        let system = build_system_prompt(
+            soul.as_deref(),
+            &self.system_prompt,
+            memory_context.as_deref(),
+            None,
+        );
 
         let tool_defs = self.tool_definitions();
 
@@ -988,12 +1006,13 @@ impl AgentRuntime {
             _ => None,
         };
 
-        let system = match (&self.system_prompt, memory_context) {
-            (Some(prompt), Some(ctx)) => Some(format!("{prompt}\n\n{ctx}")),
-            (Some(prompt), None) => Some(prompt.clone()),
-            (None, Some(ctx)) => Some(ctx),
-            (None, None) => None,
-        };
+        let soul = self.soul_content();
+        let system = build_system_prompt(
+            soul.as_deref(),
+            &self.system_prompt,
+            memory_context.as_deref(),
+            None,
+        );
 
         let tool_defs = self.tool_definitions();
 
@@ -1246,7 +1265,9 @@ impl AgentRuntime {
             _ => None,
         };
 
+        let soul = self.soul_content();
         let system = build_system_prompt(
+            soul.as_deref(),
             &self.system_prompt,
             memory_context.as_deref(),
             session_summary,
@@ -1275,6 +1296,7 @@ impl AgentRuntime {
         // If we got a new summary, rebuild system prompt with it
         let system = if new_summary.is_some() {
             build_system_prompt(
+                soul.as_deref(),
                 &self.system_prompt,
                 memory_context.as_deref(),
                 new_summary.as_deref(),
@@ -1399,7 +1421,9 @@ impl AgentRuntime {
             _ => None,
         };
 
+        let soul = self.soul_content();
         let system = build_system_prompt(
+            soul.as_deref(),
             &self.system_prompt,
             memory_context.as_deref(),
             session_summary,
@@ -1427,6 +1451,7 @@ impl AgentRuntime {
 
         let system = if new_summary.is_some() {
             build_system_prompt(
+                soul.as_deref(),
                 &self.system_prompt,
                 memory_context.as_deref(),
                 new_summary.as_deref(),
@@ -1855,13 +1880,18 @@ async fn compact_messages(
     }
 }
 
-/// Build the system prompt by combining system prompt, memory context, and conversation summary.
+/// Build the system prompt by combining soul content, system prompt, memory context,
+/// and conversation summary.
 fn build_system_prompt(
+    soul_content: Option<&str>,
     system_prompt: &Option<String>,
     memory_context: Option<&str>,
     session_summary: Option<&str>,
 ) -> Option<String> {
     let mut parts = Vec::new();
+    if let Some(soul) = soul_content {
+        parts.push(soul.to_string());
+    }
     if let Some(prompt) = system_prompt {
         parts.push(prompt.clone());
     }
@@ -1905,7 +1935,7 @@ mod tests {
         let sys = Some("You are helpful.".to_string());
         let mem = Some("User likes Rust.");
         let sum = Some("We discussed project setup.");
-        let result = build_system_prompt(&sys, mem, sum).unwrap();
+        let result = build_system_prompt(None, &sys, mem, sum).unwrap();
         assert!(result.contains("You are helpful."));
         assert!(result.contains("User likes Rust."));
         assert!(result.contains("Conversation summary:"));
@@ -1915,21 +1945,48 @@ mod tests {
     #[test]
     fn build_system_prompt_no_summary() {
         let sys = Some("You are helpful.".to_string());
-        let result = build_system_prompt(&sys, None, None).unwrap();
+        let result = build_system_prompt(None, &sys, None, None).unwrap();
         assert_eq!(result, "You are helpful.");
         assert!(!result.contains("Conversation summary:"));
     }
 
     #[test]
     fn build_system_prompt_summary_only() {
-        let result = build_system_prompt(&None, None, Some("A summary.")).unwrap();
+        let result = build_system_prompt(None, &None, None, Some("A summary.")).unwrap();
         assert!(result.contains("Conversation summary:"));
         assert!(result.contains("A summary."));
     }
 
     #[test]
     fn build_system_prompt_none_when_all_empty() {
-        assert!(build_system_prompt(&None, None, None).is_none());
+        assert!(build_system_prompt(None, &None, None, None).is_none());
+    }
+
+    #[test]
+    fn build_system_prompt_with_soul_content() {
+        let soul = Some("You are a pirate. Always say arrr.");
+        let sys = Some("You are helpful.".to_string());
+        let result = build_system_prompt(soul, &sys, None, None).unwrap();
+        // Soul should come before system prompt
+        let soul_pos = result.find("pirate").unwrap();
+        let sys_pos = result.find("helpful").unwrap();
+        assert!(soul_pos < sys_pos);
+    }
+
+    #[test]
+    fn build_system_prompt_soul_only() {
+        let result = build_system_prompt(Some("You are a pirate."), &None, None, None).unwrap();
+        assert_eq!(result, "You are a pirate.");
+    }
+
+    #[test]
+    fn soul_content_set_and_get() {
+        let runtime = AgentRuntime::new();
+        assert!(runtime.soul_content().is_none());
+        runtime.set_soul_content(Some("Be friendly.".to_string()));
+        assert_eq!(runtime.soul_content().unwrap(), "Be friendly.");
+        runtime.set_soul_content(None);
+        assert!(runtime.soul_content().is_none());
     }
 
     #[test]

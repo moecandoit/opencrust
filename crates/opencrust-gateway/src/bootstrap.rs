@@ -507,6 +507,18 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
         Err(e) => warn!("failed to scan skills directory: {e}"),
     }
 
+    // --- Soul (personality from soul.md) ---
+    let soul_path = opencrust_config::ConfigLoader::default_config_dir().join("soul.md");
+    match std::fs::read_to_string(&soul_path) {
+        Ok(content) if !content.trim().is_empty() => {
+            runtime.set_soul_content(Some(content));
+            info!("loaded soul.md from {}", soul_path.display());
+        }
+        Ok(_) => {}                                              // empty file, ignore
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {} // no soul.md, that's fine
+        Err(e) => warn!("failed to read soul.md: {e}"),
+    }
+
     runtime
 }
 

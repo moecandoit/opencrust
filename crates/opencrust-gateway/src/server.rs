@@ -1,5 +1,7 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use notify::{EventKind, RecursiveMode, Watcher};
 use opencrust_common::{
     ChannelId, Message, MessageContent, MessageDirection, Result, SessionId, UserId,
 };
@@ -98,6 +100,10 @@ impl GatewayServer {
         // Spawn background tasks
         state.spawn_session_cleanup();
         state.spawn_config_applier();
+
+        // Watch soul.md for hot-reload
+        let config_dir = opencrust_config::ConfigLoader::default_config_dir();
+        spawn_soul_watcher(Arc::clone(&state), config_dir);
 
         // Spawn MCP health monitor for auto-reconnect
         if let Some(ref arc) = mcp_manager_arc {
@@ -236,6 +242,79 @@ async fn shutdown_signal() {
         () = terminate => info!("received SIGTERM, shutting down"),
     }
 }
+
+/// Watch `{config_dir}/soul.md` for changes and hot-reload soul content into
+/// the agent runtime. On delete, soul content is cleared.
+fn spawn_soul_watcher(state: Arc<AppState>, config_dir: PathBuf) {
+    let soul_filename = std::ffi::OsStr::new("soul.md");
+    let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(8);
+
+    let watcher_result =
+        notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            if let Ok(event) = event {
+                let dominated = matches!(
+                    event.kind,
+                    EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+                );
+                if dominated {
+                    let touches_soul = event
+                        .paths
+                        .iter()
+                        .any(|p| p.file_name().map(|f| f == soul_filename).unwrap_or(false));
+                    if touches_soul {
+                        let _ = notify_tx.try_send(());
+                    }
+                }
+            }
+        });
+
+    let mut watcher = match watcher_result {
+        Ok(w) => w,
+        Err(e) => {
+            warn!("failed to create soul.md watcher: {e}");
+            return;
+        }
+    };
+
+    if let Err(e) = watcher.watch(&config_dir, RecursiveMode::NonRecursive) {
+        warn!("failed to watch config dir for soul.md: {e}");
+        return;
+    }
+
+    info!("watching soul.md for hot-reload");
+
+    let soul_path = config_dir.join("soul.md");
+    tokio::spawn(async move {
+        let _watcher = watcher; // prevent drop
+        loop {
+            if notify_rx.recv().await.is_none() {
+                break;
+            }
+            // Debounce
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            while notify_rx.try_recv().is_ok() {}
+
+            match std::fs::read_to_string(&soul_path) {
+                Ok(content) if !content.trim().is_empty() => {
+                    state.agents.set_soul_content(Some(content));
+                    info!("soul.md reloaded");
+                }
+                Ok(_) => {
+                    state.agents.set_soul_content(None);
+                    info!("soul.md is empty, cleared soul content");
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    state.agents.set_soul_content(None);
+                    info!("soul.md removed, cleared soul content");
+                }
+                Err(e) => {
+                    warn!("failed to read soul.md: {e}");
+                }
+            }
+        }
+    });
+}
+
 async fn run_scheduler(state: &AppState) -> Result<()> {
     let store_mutex = match &state.session_store {
         Some(s) => s,

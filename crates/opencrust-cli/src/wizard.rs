@@ -475,6 +475,150 @@ fn section_system_prompt(existing: &Option<AppConfig>) -> Result<Option<String>>
 }
 
 // ---------------------------------------------------------------------------
+// Section: Soul (personality)
+// ---------------------------------------------------------------------------
+
+fn section_soul(config_dir: &Path) -> Result<()> {
+    println!();
+    println!("  --- Soul (bot personality) ---");
+    println!("  soul.md defines your bot's personality, tone, and behavioral guidelines.");
+    println!("  It is separate from the system prompt and supports full markdown.");
+    println!();
+
+    let soul_path = config_dir.join("soul.md");
+
+    if soul_path.exists() {
+        let content = std::fs::read_to_string(&soul_path).unwrap_or_default();
+        if !content.trim().is_empty() {
+            let preview: Vec<&str> = content.lines().take(3).collect();
+            println!("  Existing soul.md:");
+            for line in &preview {
+                println!("    {line}");
+            }
+            if content.lines().count() > 3 {
+                println!("    ...");
+            }
+            println!();
+
+            let choices = &[
+                "Keep current",
+                "Replace with default",
+                "Write custom",
+                "Delete",
+            ];
+            let sel = Select::new()
+                .with_prompt("Soul personality")
+                .items(choices)
+                .default(0)
+                .interact()
+                .context("selection cancelled")?;
+
+            match sel {
+                0 => return Ok(()),
+                1 => {
+                    write_default_soul(&soul_path)?;
+                    println!("  Default soul.md written.");
+                }
+                2 => {
+                    write_custom_soul(&soul_path)?;
+                }
+                3 => {
+                    std::fs::remove_file(&soul_path).context("failed to delete soul.md")?;
+                    println!("  soul.md deleted.");
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+    }
+
+    // No existing soul.md - offer choices
+    let mut choices = vec!["Create default soul.md (recommended)", "Write custom"];
+
+    // Check for OpenClaw SOUL.md
+    let openclaw_soul = crate::migrate::detect_openclaw_dir(None).and_then(|dir| {
+        let upper = dir.join("SOUL.md");
+        let lower = dir.join("soul.md");
+        if upper.exists() {
+            Some(upper)
+        } else if lower.exists() {
+            Some(lower)
+        } else {
+            None
+        }
+    });
+
+    if openclaw_soul.is_some() {
+        choices.push("Import from OpenClaw");
+    }
+    choices.push("Skip");
+
+    let sel = Select::new()
+        .with_prompt("Soul personality")
+        .items(&choices)
+        .default(0)
+        .interact()
+        .context("selection cancelled")?;
+
+    let chosen = choices[sel];
+    if chosen.starts_with("Create default") {
+        write_default_soul(&soul_path)?;
+        println!("  Default soul.md written to {}", soul_path.display());
+    } else if chosen == "Write custom" {
+        write_custom_soul(&soul_path)?;
+    } else if chosen == "Import from OpenClaw" {
+        if let Some(ref src) = openclaw_soul {
+            std::fs::copy(src, &soul_path).context("failed to copy SOUL.md from OpenClaw")?;
+            println!("  Imported soul.md from {}", src.display());
+        }
+    } else {
+        println!(
+            "  Skipping soul.md. You can create one later at {}",
+            soul_path.display()
+        );
+    }
+
+    Ok(())
+}
+
+fn write_default_soul(path: &Path) -> Result<()> {
+    let default = "\
+# Soul
+
+You are a helpful, friendly AI assistant.
+
+## Personality
+- Warm and approachable, but concise
+- Honest about limitations
+- Adapt tone to match the user's style
+
+## Guidelines
+- Be direct and actionable
+- Ask clarifying questions when needed
+- Respect the user's time
+";
+    std::fs::write(path, default).context("failed to write soul.md")?;
+    Ok(())
+}
+
+fn write_custom_soul(path: &Path) -> Result<()> {
+    let content: String = Input::new()
+        .with_prompt("Enter soul content (personality description)")
+        .allow_empty(true)
+        .interact_text()
+        .context("soul input cancelled")?;
+
+    if content.trim().is_empty() {
+        println!("  Empty input, skipping soul.md.");
+        return Ok(());
+    }
+
+    std::fs::write(path, &content).context("failed to write soul.md")?;
+    println!("  Custom soul.md written.");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Section: Channels
 // ---------------------------------------------------------------------------
 
@@ -1030,7 +1174,10 @@ pub async fn run_wizard(config_dir: &Path) -> Result<()> {
     // --- Section 2: System Prompt ---
     let new_prompt = section_system_prompt(&existing)?;
 
-    // --- Section 3: Channels ---
+    // --- Section 3: Soul (personality) ---
+    section_soul(config_dir)?;
+
+    // --- Section 4: Channels ---
     let new_channels = section_channels(&existing, &detected).await?;
 
     // --- Build config ---
@@ -1153,6 +1300,11 @@ pub async fn run_wizard(config_dir: &Path) -> Result<()> {
             prompt.clone()
         };
         println!("  Prompt:    {display}");
+    }
+
+    let soul_path = config_dir.join("soul.md");
+    if soul_path.exists() {
+        println!("  Soul:      {}", soul_path.display());
     }
 
     if !config.channels.is_empty() {

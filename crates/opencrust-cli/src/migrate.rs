@@ -60,7 +60,7 @@ impl MigrationReport {
     }
 }
 
-fn detect_openclaw_dir(explicit: Option<&str>) -> Option<PathBuf> {
+pub fn detect_openclaw_dir(explicit: Option<&str>) -> Option<PathBuf> {
     if let Some(path) = explicit {
         let p = PathBuf::from(path);
         if p.exists() {
@@ -109,6 +109,7 @@ pub fn migrate_openclaw(
     import_conversations(&source_dir, &mut report);
     import_channels(&source_dir, opencrust_dir, &mut report);
     import_credentials(&source_dir, &mut report);
+    import_soul(&source_dir, opencrust_dir, &report);
 
     Ok(report)
 }
@@ -464,6 +465,32 @@ fn import_credentials(source_dir: &Path, report: &mut MigrationReport) {
             "  Note: credential migration is skipped — re-enter API keys \
              via `opencrust init` or set environment variables directly."
         );
+    }
+}
+
+fn import_soul(source_dir: &Path, opencrust_dir: &Path, report: &MigrationReport) {
+    // Look for SOUL.md or soul.md in the OpenClaw directory
+    let candidates = [source_dir.join("SOUL.md"), source_dir.join("soul.md")];
+    let source = candidates.iter().find(|p| p.exists());
+
+    let Some(source) = source else {
+        return;
+    };
+
+    let dest = opencrust_dir.join("soul.md");
+    if dest.exists() {
+        println!("  soul.md already exists in OpenCrust, skipping");
+        return;
+    }
+
+    if report.dry_run {
+        println!("  would import soul.md from {}", source.display());
+        return;
+    }
+
+    match std::fs::copy(source, &dest) {
+        Ok(_) => println!("  imported soul.md from {}", source.display()),
+        Err(e) => println!("  failed to import soul.md: {e}"),
     }
 }
 
