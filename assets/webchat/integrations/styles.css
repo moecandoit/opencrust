@@ -1,0 +1,242 @@
+/* Integrations View Styles */
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--panel-edge);
+  background: var(--sand-1);
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.settings-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.card {
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.card-meta {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  background: var(--sand-2);
+  padding: 6px 10px;
+  border-radius: 6px;
+  word-break: break-all;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--panel-edge);
+  padding-top: 12px;
+}
+
+.card-actions button {
+  font-size: 0.75rem;
+  padding: 6px 10px;
+}
+
+.integration-card {
+  border-radius: 16px;
+  padding: 22px;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  overflow: visible;
+  background:
+    radial-gradient(120% 120% at 95% 0%, rgba(173, 125, 71, 0.22), transparent 60%),
+    linear-gradient(180deg, var(--panel), var(--sand-2));
+  border: 1px solid var(--panel-edge);
+  box-shadow: 0 10px 20px rgba(45, 31, 18, 0.12);
+  justify-content: start;
+  gap: 14px;
+}
+
+.integration-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.integration-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex: 0 0 24px;
+}
+
+.integration-card .card-title {
+  font-size: 1.18rem;
+  letter-spacing: 0.01em;
+}
+
+.integration-card .card-meta {
+  font-family: "Archivo", "Segoe UI", sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  padding: 12px 14px;
+  border-radius: 10px;
+  word-break: normal;
+}
+
+.integration-config {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.integration-config label {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.integration-config input {
+  width: 100%;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--panel-2);
+  padding: 7px 9px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.77rem;
+}
+
+.integration-config input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 2px rgba(127, 90, 49, 0.2);
+}
+
+.integration-config button {
+  margin-top: 4px;
+  justify-self: end;
+  font-size: 0.75rem;
+  padding: 6px 10px;
+}
+
+.integration-feedback {
+  min-height: 1.2em;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+
+.integration-feedback.is-success {
+  color: var(--online);
+}
+
+.integration-feedback.is-error {
+  color: var(--error-edge);
+}
+
+.integration-note {
+  min-height: 1.2em;
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+}
+
+.integration-note.is-success {
+  color: var(--online);
+}
+
+.integration-note.is-error {
+  color: var(--error-edge);
+}
+
+.integration-diagnostics {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  background: var(--panel);
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.diag-issue {
+  color: var(--error-edge);
+}
+
+.integration-card.is-placeholder {
+  opacity: 0.75;
+  filter: grayscale(0.2);
+  background: var(--panel);
+  border-style: dashed;
+  box-shadow: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.integration-card.is-placeholder:hover {
+  opacity: 0.9;
+  filter: grayscale(0);
+  transform: translateY(-2px);
+  border-style: solid;
+}
+
+.integration-card.is-placeholder .card-title {
+  color: var(--ink-soft);
+}
+
+.integration-card.is-placeholder .pill {
+  background: var(--sand-1);
+  border-color: var(--panel-edge);
+}
+
+#integrations-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  align-items: stretch;
+  gap: 16px;
+}
+
+@media (max-width: 1280px) {
+  #integrations-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  #integrations-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -28,7 +28,7 @@ uuid = { workspace = true }
 dashmap = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }
-notify = { workspace = true }
+url = { workspace = true }
 dirs = "6"
 governor = "0.8"
 tower_governor = "0.8"
