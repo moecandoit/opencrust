@@ -30,6 +30,7 @@ futures = { workspace = true }
 chrono = { workspace = true }
 url = { workspace = true }
 dirs = "6"
+notify = "7"
 governor = "0.8"
 tower_governor = "0.8"
 

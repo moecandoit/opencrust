@@ -321,7 +321,14 @@ async fn process_text_message(
             }
 
             state
-                .persist_turn(session_id, Some("web"), None, &user_text, &response_text)
+                .persist_turn(
+                    session_id,
+                    Some("web"),
+                    None,
+                    &user_text,
+                    &response_text,
+                    None,
+                )
                 .await;
 
             serde_json::json!({

@@ -144,6 +144,7 @@ pub async fn send_message(
                     None,
                     &body.content,
                     &response_text,
+                    None,
                 )
                 .await;
             (

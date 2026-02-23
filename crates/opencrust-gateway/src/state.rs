@@ -307,6 +307,10 @@ impl AppState {
     }
 
     /// Append a user/assistant turn to in-memory state and persistent session storage.
+    ///
+    /// `channel_metadata` is an optional JSON object with channel-specific routing
+    /// fields (e.g. `telegram_chat_id`, `discord_channel_id`) that get persisted
+    /// alongside the continuity key so scheduled heartbeats can deliver responses.
     pub async fn persist_turn(
         &self,
         session_id: &str,
@@ -314,6 +318,7 @@ impl AppState {
         user_id: Option<&str>,
         user_text: &str,
         assistant_text: &str,
+        channel_metadata: Option<serde_json::Value>,
     ) {
         if !self.sessions.contains_key(session_id) {
             self.create_session_with_id(session_id.to_string());
@@ -343,10 +348,18 @@ impl AppState {
 
         let channel = channel_id.unwrap_or("web");
         let user = user_id.unwrap_or("anonymous");
-        let metadata = self
+        let mut metadata = self
             .continuity_key(user_id)
             .map(|k| serde_json::json!({ "continuity_key": k }))
             .unwrap_or_else(|| serde_json::json!({}));
+
+        if let Some(extra) = channel_metadata
+            && let (Some(base), Some(extra_obj)) = (metadata.as_object_mut(), extra.as_object())
+        {
+            for (k, v) in extra_obj {
+                base.insert(k.clone(), v.clone());
+            }
+        }
 
         let guard = store.lock().await;
         if let Err(e) = guard.upsert_session(session_id, channel, user, &metadata) {

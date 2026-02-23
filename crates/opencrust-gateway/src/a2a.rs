@@ -115,7 +115,14 @@ pub async fn create_task(
     match result {
         Ok(response_text) => {
             state
-                .persist_turn(&session_id, Some("a2a"), None, &user_text, &response_text)
+                .persist_turn(
+                    &session_id,
+                    Some("a2a"),
+                    None,
+                    &user_text,
+                    &response_text,
+                    None,
+                )
                 .await;
 
             // Update task to completed with artifact

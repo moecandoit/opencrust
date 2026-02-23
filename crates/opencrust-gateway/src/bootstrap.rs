@@ -793,6 +793,7 @@ pub fn build_discord_channels(
                             Some(&user_id),
                             &text,
                             &response,
+                            Some(serde_json::json!({"discord_channel_id": channel_id})),
                         )
                         .await;
 
@@ -1062,6 +1063,7 @@ pub fn build_telegram_channels(
                                     Some(&user_id),
                                     &text,
                                     &response,
+                                    Some(serde_json::json!({"telegram_chat_id": chat_id})),
                                 )
                                 .await;
                             Ok(response)
@@ -1132,6 +1134,7 @@ pub fn build_telegram_channels(
                                     Some(&user_id),
                                     &caption_text,
                                     &response,
+                                    Some(serde_json::json!({"telegram_chat_id": chat_id})),
                                 )
                                 .await;
                             Ok(response)
@@ -1224,6 +1227,7 @@ pub fn build_telegram_channels(
                                     Some(&user_id),
                                     &text,
                                     &response,
+                                    Some(serde_json::json!({"telegram_chat_id": chat_id})),
                                 )
                                 .await;
                             Ok(response)
@@ -1286,6 +1290,7 @@ pub fn build_telegram_channels(
                                     Some(&user_id),
                                     &text,
                                     &response,
+                                    Some(serde_json::json!({"telegram_chat_id": chat_id})),
                                 )
                                 .await;
                             Ok(response)
@@ -1675,7 +1680,14 @@ pub fn build_slack_channels(
                     }
 
                     state
-                        .persist_turn(&session_id, Some("slack"), Some(&user_id), &text, &response)
+                        .persist_turn(
+                            &session_id,
+                            Some("slack"),
+                            Some(&user_id),
+                            &text,
+                            &response,
+                            Some(serde_json::json!({"slack_channel_id": channel_id})),
+                        )
                         .await;
 
                     Ok(response)
@@ -1859,6 +1871,7 @@ pub fn build_whatsapp_channels(
                             Some(&from_number),
                             &text,
                             &response,
+                            Some(serde_json::json!({"whatsapp_from": from_number})),
                         )
                         .await;
 
@@ -1994,6 +2007,7 @@ pub fn build_imessage_channels(
                             Some(&sender_id),
                             &text,
                             &response,
+                            Some(serde_json::json!({"imessage_sender": sender_id})),
                         )
                         .await;
 
