@@ -34,6 +34,14 @@ The agent runtime includes 6 built-in tools that the LLM can invoke during a con
 
 See [Tools](./tools.md) for the full reference.
 
+## Personality (DNA)
+
+The agent's personality and identity is stored in `~/.opencrust/dna.md`. On first message with no DNA file, a bootstrap instruction is injected into the system prompt that directs the agent to ask the user for their preferences and write the file using the `file_write` tool.
+
+Once created, DNA content is prepended to the system prompt on every message. The file is watched via the `notify` crate with 500ms debounce for hot-reload - edits take effect immediately.
+
+System prompt layering order: `dna_content` + `system_prompt` (from config) + `memory_context` + `session_summary`.
+
 ## MCP (Model Context Protocol)
 
 OpenCrust can connect to external MCP servers to extend the agent's capabilities. MCP tools are discovered at startup and appear as native agent tools with namespaced names (`server.tool_name`).

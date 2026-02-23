@@ -39,10 +39,10 @@ A single 16 MB binary that runs your AI agents across Telegram, Discord, Slack, 
 # Install (Linux, macOS)
 curl -fsSL https://raw.githubusercontent.com/opencrust-org/opencrust/main/install.sh | sh
 
-# Interactive setup - pick your LLM provider, store API keys in encrypted vault
+# Interactive setup - pick your LLM provider and channels
 opencrust init
 
-# Start
+# Start - on first message, the agent will introduce itself and learn your preferences
 opencrust start
 ```
 
@@ -134,10 +134,17 @@ OpenCrust is built for the security requirements of always-on AI agents that acc
 - Configure in `config.yml` or `~/.opencrust/mcp.json` (Claude Desktop compatible)
 - CLI: `opencrust mcp list`, `opencrust mcp inspect <name>`
 
+### Personality (DNA)
+- On first message, the agent introduces itself and asks a few questions to learn your preferences
+- Writes `~/.opencrust/dna.md` with your name, communication style, guidelines, and the bot's own identity
+- No config files to edit, no wizard sections to fill out - just a conversation
+- Hot-reloads on edit - change `dna.md` and the agent adapts immediately
+- Migrating from OpenClaw? `opencrust migrate openclaw` imports your existing `SOUL.md`
+
 ### Agent Runtime
 - Tool execution loop - bash, file_read, file_write, web_fetch, web_search, schedule_heartbeat (up to 10 iterations)
 - SQLite-backed conversation memory with vector search (sqlite-vec + Cohere embeddings)
-- Context window management - automatic history trimming
+- Context window management - rolling conversation summarization at 75% context window
 - Scheduled tasks - cron, interval, and one-shot scheduling
 
 ### Skills
@@ -152,11 +159,12 @@ OpenCrust is built for the security requirements of always-on AI agents that acc
 - **Restart** - `opencrust restart` gracefully stops and starts the daemon
 - **Runtime provider switching** - add or switch LLM providers via the webchat UI or REST API without restarting
 - **Migration tool** - `opencrust migrate openclaw` imports skills, channels, and credentials
-- **Interactive setup** - `opencrust init` wizard for provider and API key configuration
+- **Conversation summarization** - rolling summary at 75% context window, session summaries persisted across restarts
+- **Interactive setup** - `opencrust init` wizard for provider and channel configuration
 
 ## Migrating from OpenClaw?
 
-One command imports your skills, channel configs, and credentials (encrypted into the vault):
+One command imports your skills, channel configs, credentials (encrypted into the vault), and personality (`SOUL.md` as `dna.md`):
 
 ```bash
 opencrust migrate openclaw
@@ -191,7 +199,7 @@ channels:
     bot_token: "your-bot-token"  # or TELEGRAM_BOT_TOKEN env var
 
 agent:
-  system_prompt: "You are a helpful assistant."
+  # Personality is configured via ~/.opencrust/dna.md (auto-created on first message)
   max_tokens: 4096
   max_context_tokens: 100000
 
@@ -237,7 +245,8 @@ crates/
 | MCP client (stdio, tool bridging) | Working |
 | Skills (SKILL.md, auto-discovery) | Working |
 | Config (YAML/TOML, hot-reload) | Working |
-| Memory (SQLite, vector search) | Working |
+| Personality (DNA bootstrap, hot-reload) | Working |
+| Memory (SQLite, vector search, summarization) | Working |
 | Security (vault, allowlist, pairing) | Working |
 | Scheduling (cron, interval, one-shot) | Working |
 | CLI (init, start/stop/restart, update, migrate, mcp, skills) | Working |

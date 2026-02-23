@@ -2,7 +2,7 @@
 
 **The secure, lightweight open-source AI agent framework.**
 
-A single 17 MB binary that runs your AI agents across Telegram, Discord, Slack, WhatsApp, and iMessage — with encrypted credential storage, config hot-reload, and 13 MB of RAM at idle. Built in Rust for the security and reliability that AI agents demand.
+A single 17 MB binary that runs your AI agents across Telegram, Discord, Slack, WhatsApp, and iMessage - with encrypted credential storage, config hot-reload, and 13 MB of RAM at idle. Built in Rust for the security and reliability that AI agents demand.
 
 ## Why OpenCrust?
 
@@ -32,7 +32,8 @@ A single 17 MB binary that runs your AI agents across Telegram, Discord, Slack, 
 - **LLM Providers**: 14 providers - Anthropic Claude, OpenAI, Ollama, and 11 OpenAI-compatible (Sansa, DeepSeek, Mistral, Gemini, Falcon, Jais, Qwen, Yi, Cohere, MiniMax, Moonshot).
 - **Channels**: Telegram, Discord, Slack, WhatsApp, iMessage.
 - **MCP**: Connect any MCP-compatible server for external tools.
-- **Agent Runtime**: 6 built-in tools (bash, file_read, file_write, web_fetch, web_search, schedule_heartbeat), memory with vector search, scheduled tasks.
+- **Personality (DNA)**: Conversational bootstrap on first message - the agent asks your preferences and writes `~/.opencrust/dna.md`. Hot-reloads on edit.
+- **Agent Runtime**: 6 built-in tools (bash, file_read, file_write, web_fetch, web_search, schedule_heartbeat), memory with vector search, conversation summarization, scheduled tasks.
 - **Skills**: Define skills as Markdown files.
 - **Infrastructure**: Config hot-reload, daemonization, self-update, migration tools.
 

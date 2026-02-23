@@ -6,7 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-02-24
+
+### Changed
+- Renamed `soul.md` to `dna.md` for bot personality and identity
+- Conversational bootstrap: on first message with no `dna.md`, the agent asks the user their name, preferred communication style, and guidelines, then writes `~/.opencrust/dna.md` automatically
+- Bootstrap also asks the bot what to call itself, capturing bot identity in `dna.md`
+- Removed system prompt and personality sections from `opencrust init` wizard (replaced by conversational bootstrap)
+- `dna.md` hot-reloads on edit, no restart needed
+
+## [0.1.17] - 2026-02-24
+
+### Changed
+- Rename `soul.md` to `dna.md` with conversational bootstrap (initial release, replaced by v0.1.18)
+
+## [0.1.16] - 2026-02-24
+
 ### Added
+- `soul.md` support for bot personality and tone (#148)
+- Hot-reload for `soul.md` via file watcher (500ms debounce)
+- Wizard section for creating/customizing/importing personality from OpenClaw
+- `build_system_prompt()` layering: soul + system_prompt + memory + summary
+
+## [0.1.15] - 2026-02-24
+
+### Fixed
+- Fix MCP tool name rejection by Anthropic API (underscore separator instead of dots)
+
+## [0.1.14] - 2026-02-23
+
+### Changed
+- Smart setup wizard with environment detection, inline validation, and guided channel configuration
+
+## [0.1.13] - 2026-02-23
+
+### Changed
+- Improved setup wizard: detect existing config, offer keep/reconfigure options
+
+## [0.1.12] - 2026-02-23
+
+### Added
+- Rolling conversation summarization with automatic context window management (#56)
 - Telegram photo handling with vision support (Anthropic + OpenAI) (#49)
 - Telegram voice messages with Whisper transcription (OpenAI/Groq fallback) (#50)
 - Telegram document/file handling with text extraction (#57)

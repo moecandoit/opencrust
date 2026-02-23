@@ -8,10 +8,10 @@ The fastest way to get started is using the install script:
 # Install (Linux, macOS)
 curl -fsSL https://raw.githubusercontent.com/opencrust-org/opencrust/main/install.sh | sh
 
-# Interactive setup — pick your LLM provider, store API keys in encrypted vault
+# Interactive setup - pick your LLM provider and channels
 opencrust init
 
-# Start
+# Start - on first message, the agent learns your preferences
 opencrust start
 ```
 
@@ -54,7 +54,7 @@ channels:
     bot_token: "your-bot-token"  # or TELEGRAM_BOT_TOKEN env var
 
 agent:
-  system_prompt: "You are a helpful assistant."
+  # Personality is configured via ~/.opencrust/dna.md (auto-created on first message)
   max_tokens: 4096
   max_context_tokens: 100000
 
@@ -68,9 +68,38 @@ mcp:
     args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 ```
 
+## Personality (DNA)
+
+On first message, if no `~/.opencrust/dna.md` exists, the agent will introduce itself and ask a few questions:
+
+1. What should I call you?
+2. What should I call myself?
+3. How do you prefer I communicate - casual, professional, or something else?
+4. Any specific guidelines or things to avoid?
+
+The agent then writes `~/.opencrust/dna.md` with your answers and continues helping with whatever you originally asked. The file hot-reloads - edit it anytime and the agent adapts immediately without a restart.
+
+You can also create `dna.md` manually:
+
+```markdown
+# Identity
+Neo
+
+# User Preferences
+
+## Name
+Morpheus
+
+## Communication Style
+Casual
+
+## Guidelines
+- Keep things relaxed and conversational
+```
+
 ## Migrating from OpenClaw
 
-If you are migrating from OpenClaw, you can use the migration tool to import your skills, channel configs, and credentials.
+If you are migrating from OpenClaw, you can use the migration tool to import your skills, channel configs, credentials, and personality (`SOUL.md` is imported as `dna.md`).
 
 ```bash
 opencrust migrate openclaw
