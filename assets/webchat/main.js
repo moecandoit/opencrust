@@ -757,7 +757,7 @@ reconnectBtn.addEventListener("click", () => {
 
 clearBtn.addEventListener("click", () => {
   setAgentThinking(false);
-  chatEl.innerHTML = "";
+  chatEl.querySelectorAll(".msg").forEach((msg) => msg.remove());
   setSession("");
   reconnectFresh();
 });
@@ -985,4 +985,3 @@ function initNanoAgents() {
 initIntegrationsViewShell();
 boot();
 initNanoAgents();
-
