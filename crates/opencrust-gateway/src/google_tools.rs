@@ -1467,3 +1467,149 @@ fn parse_google_error_body(body: &str) -> Option<String> {
             })
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Timelike;
+
+    #[test]
+    fn parse_list_events_defaults_and_rejects_invalid_range() {
+        let defaults = serde_json::json!({});
+        let parsed = parse_list_events_input(&defaults).expect("defaults should parse");
+        assert_eq!(parsed.calendar_id, "primary");
+        assert!(parsed.time_max.is_none());
+
+        let explicit = serde_json::json!({
+            "calendar_id": "team",
+            "time_min": "2026-02-23T10:00:00Z",
+            "time_max": "2026-02-23T11:00:00Z",
+        });
+        let parsed = parse_list_events_input(&explicit).expect("explicit values should parse");
+        assert_eq!(parsed.calendar_id, "team");
+        assert!(parsed.time_max.is_some());
+
+        let invalid = serde_json::json!({
+            "time_min": "2026-02-23T10:00:00Z",
+            "time_max": "2026-02-23T09:00:00Z",
+        });
+        assert!(parse_list_events_input(&invalid).is_err());
+    }
+
+    #[test]
+    fn parse_list_gmail_defaults_and_clamps() {
+        let defaults = serde_json::json!({});
+        let parsed = parse_list_gmail_input(&defaults).expect("defaults should parse");
+        assert_eq!(parsed.user_id, "me");
+        assert_eq!(parsed.max_results, DEFAULT_MAX_RESULTS);
+
+        let high = serde_json::json!({ "max_results": 999u64 });
+        let parsed = parse_list_gmail_input(&high).expect("high should parse");
+        assert_eq!(parsed.max_results, MAX_RESULTS_LIMIT);
+
+        let low = serde_json::json!({ "max_results": 0u64 });
+        let parsed = parse_list_gmail_input(&low).expect("low should parse");
+        assert_eq!(parsed.max_results, 1);
+    }
+
+    #[test]
+    fn gmail_get_message_rejects_invalid_format() {
+        let input = serde_json::json!({ "message_id": "m-1", "format": "raw" });
+        assert!(parse_gmail_get_message_input(&input).is_err());
+    }
+
+    #[test]
+    fn gmail_send_requires_to_and_subject() {
+        assert!(parse_gmail_send_message_input(&serde_json::json!({
+            "subject": "Hi", "body_text": "Body"
+        }))
+        .is_err());
+
+        assert!(parse_gmail_send_message_input(&serde_json::json!({
+            "to": "a@example.com", "body_text": "Body"
+        }))
+        .is_err());
+
+        let parsed = parse_gmail_send_message_input(&serde_json::json!({
+            "to": "a@example.com, b@example.com",
+            "subject": "Hello",
+            "body_text": "Body",
+        }))
+        .expect("should parse");
+        assert_eq!(parsed.to, vec!["a@example.com", "b@example.com"]);
+    }
+
+    #[test]
+    fn gmail_send_rejects_header_injection() {
+        let injected = serde_json::json!({
+            "to": "a@example.com",
+            "subject": "\r\n",
+            "body_text": "Body",
+        });
+        assert!(parse_gmail_send_message_input(&injected).is_err());
+    }
+
+    #[test]
+    fn drive_inputs() {
+        let list = parse_list_drive_input(&serde_json::json!({
+            "query": "mimeType='application/pdf'",
+            "max_results": 100u64,
+        }))
+        .expect("should parse");
+        assert_eq!(list.query.as_deref(), Some("mimeType='application/pdf'"));
+        assert_eq!(list.max_results, MAX_RESULTS_LIMIT);
+
+        assert!(parse_drive_get_file_metadata_input(&serde_json::json!({})).is_err());
+        let file = parse_drive_get_file_metadata_input(&serde_json::json!({ "file_id": "abc" }))
+            .expect("should parse");
+        assert_eq!(file.file_id, "abc");
+    }
+
+    #[test]
+    fn parse_rfc3339_utc_variants() {
+        let now = parse_rfc3339_utc("now").expect("now should parse");
+        assert!((Utc::now() - now).num_seconds().abs() <= 2);
+
+        let today = parse_rfc3339_utc("today").expect("today should parse");
+        assert_eq!(today.date_naive(), Utc::now().date_naive());
+        assert_eq!(today.hour(), 0);
+
+        let tomorrow = parse_rfc3339_utc("tomorrow").expect("tomorrow should parse");
+        assert_eq!(
+            tomorrow.date_naive(),
+            Utc::now().date_naive().succ_opt().expect("tomorrow")
+        );
+
+        let ymd = parse_rfc3339_utc("2026-03-01").expect("date should parse");
+        assert_eq!(ymd.date_naive().to_string(), "2026-03-01");
+
+        let full = parse_rfc3339_utc("2026-02-23T15:04:05Z").expect("rfc3339 should parse");
+        assert_eq!(full.to_rfc3339(), "2026-02-23T15:04:05+00:00");
+    }
+
+    #[test]
+    fn build_gmail_raw_message_structure() {
+        let input = GmailSendMessageInput {
+            user_id: "me".to_string(),
+            to: vec!["to@example.com".to_string()],
+            cc: vec!["cc@example.com".to_string()],
+            bcc: vec![],
+            subject: "Test".to_string(),
+            body_text: "Plain body".to_string(),
+            body_html: Some("<b>HTML</b>".to_string()),
+            thread_id: None,
+        };
+        let raw = build_gmail_raw_message(&input);
+        assert!(raw.contains("To: to@example.com\r\n"));
+        assert!(raw.contains("Cc: cc@example.com\r\n"));
+        assert!(raw.contains("Subject: Test\r\n"));
+        assert!(raw.contains("multipart/alternative"));
+    }
+
+    #[test]
+    fn sanitize_gmail_header_strips_crlf() {
+        let sanitized = sanitize_gmail_header("Hello\r\nWorld", "subject").expect("should sanitize");
+        assert_eq!(sanitized, "Hello  World");
+        assert!(sanitize_gmail_header("\r\n", "subject").is_err());
+    }
+}
