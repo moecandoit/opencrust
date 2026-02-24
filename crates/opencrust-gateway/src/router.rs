@@ -2,7 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
+use axum::body::Body;
 use axum::extract::Query;
+use axum::http::{Request, StatusCode};
+use axum::middleware::Next;
 use axum::response::{Html, IntoResponse, Redirect};
 use axum::routing::{get, post};
 use opencrust_security::credentials::vault_passphrase_available;
@@ -48,19 +51,7 @@ pub fn build_router(
         )
         .with_state(whatsapp_state);
 
-    Router::new()
-        .route("/", get(web_chat))
-        .route("/health", get(health))
-        .route("/ws", get(ws::ws_handler))
-        .route("/api/status", get(status))
-        .route("/api/auth-check", get(auth_check))
-        .route(
-            "/api/sessions",
-            get(api::list_sessions).post(api::create_session),
-        )
-        .route("/api/sessions/{id}/messages", post(api::send_message))
-        .route("/api/sessions/{id}/history", get(api::session_history))
-        .route("/api/providers", get(list_providers).post(add_provider))
+    let protected_integration_routes = Router::new()
         .route(
             "/api/integrations/google",
             get(get_google_integration).post(set_google_integration),
@@ -82,14 +73,32 @@ pub fn build_router(
             get(get_google_integration_connect_url),
         )
         .route(
-            "/api/integrations/google/callback",
-            get(handle_google_integration_callback),
-        )
-        .route(
             "/api/integrations/google/disconnect",
             post(disconnect_google_integration),
         )
         .route("/api/security/vault", get(get_vault_status))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_gateway_api_key,
+        ));
+
+    Router::new()
+        .route("/", get(web_chat))
+        .route("/health", get(health))
+        .route("/ws", get(ws::ws_handler))
+        .route("/api/status", get(status))
+        .route("/api/auth-check", get(auth_check))
+        .route(
+            "/api/sessions",
+            get(api::list_sessions).post(api::create_session),
+        )
+        .route("/api/sessions/{id}/messages", post(api::send_message))
+        .route("/api/sessions/{id}/history", get(api::session_history))
+        .route("/api/providers", get(list_providers).post(add_provider))
+        .route(
+            "/api/integrations/google/callback",
+            get(handle_google_integration_callback),
+        )
         .route("/api/mcp", get(list_mcp_servers))
         // A2A protocol endpoints
         .route("/.well-known/agent.json", get(a2a::agent_card))
@@ -97,8 +106,9 @@ pub fn build_router(
         .route("/a2a/tasks/{id}", get(a2a::get_task))
         .route("/a2a/tasks/{id}/cancel", post(a2a::cancel_task))
         .nest_service("/assets", ServeDir::new("assets"))
-        .with_state(state)
+        .merge(protected_integration_routes)
         .merge(whatsapp_routes)
+        .with_state(state)
         .layer(governor_layer)
 }
 
@@ -164,6 +174,64 @@ async fn auth_check(
     }))
 }
 
+async fn require_gateway_api_key(
+    axum::extract::State(state): axum::extract::State<SharedState>,
+    req: Request<Body>,
+    next: Next,
+) -> axum::response::Response {
+    let Some(configured_key) = state.config.gateway.api_key.as_deref() else {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": "Gateway API key is required for integration endpoints. Set OPENCRUST_GATEWAY_API_KEY.",
+            })),
+        )
+            .into_response();
+    };
+
+    let token_from_header = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.strip_prefix("Bearer ").unwrap_or(value).to_string());
+
+    let token_from_query = req.uri().query().and_then(|query| {
+        form_urlencoded::parse(query.as_bytes())
+            .find(|(key, _)| key == "token" || key == "api_key")
+            .map(|(_, value)| value.into_owned())
+    });
+
+    let valid = token_from_header
+        .or(token_from_query)
+        .as_deref()
+        .map(|token| constant_time_token_eq(token, configured_key))
+        .unwrap_or(false);
+
+    if valid {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": "Invalid or missing gateway API key.",
+            })),
+        )
+            .into_response()
+    }
+}
+
+fn constant_time_token_eq(left: &str, right: &str) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.bytes()
+        .zip(right.bytes())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
+}
+
 /// GET /api/security/vault — report whether secure vault persistence is available this run.
 async fn get_vault_status() -> axum::Json<serde_json::Value> {
     let vault_path = crate::bootstrap::default_vault_path();
@@ -217,8 +285,35 @@ async fn set_google_integration(
     )
 }
 
-const GOOGLE_OAUTH_SCOPES: &str = "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.metadata.readonly";
+const GOOGLE_OAUTH_SCOPES_BASE: &[&str] = &[
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+];
+const GOOGLE_OAUTH_SCOPE_GMAIL_SEND: &str = "https://www.googleapis.com/auth/gmail.send";
 const GOOGLE_OAUTH_STATE_TTL_SECS: u64 = 600;
+
+fn google_gmail_send_scope_enabled() -> bool {
+    std::env::var("OPENCRUST_GOOGLE_ENABLE_GMAIL_SEND_SCOPE")
+        .ok()
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn google_oauth_scopes() -> Vec<&'static str> {
+    let mut scopes = GOOGLE_OAUTH_SCOPES_BASE.to_vec();
+    if google_gmail_send_scope_enabled() {
+        scopes.push(GOOGLE_OAUTH_SCOPE_GMAIL_SEND);
+    }
+    scopes
+}
+
+fn google_oauth_scope_string() -> String {
+    google_oauth_scopes().join(" ")
+}
 
 #[derive(Debug, Clone)]
 struct GoogleOAuthConfig {
@@ -314,7 +409,7 @@ fn google_authorize_url(state: &SharedState) -> Result<String, String> {
         .append_pair("client_id", &oauth.client_id)
         .append_pair("redirect_uri", &effective_redirect_uri)
         .append_pair("response_type", "code")
-        .append_pair("scope", GOOGLE_OAUTH_SCOPES)
+        .append_pair("scope", &google_oauth_scope_string())
         .append_pair("access_type", "offline")
         .append_pair("include_granted_scopes", "true")
         .append_pair("prompt", "consent")
@@ -510,7 +605,7 @@ async fn handle_google_integration_callback(
     };
 
     if let Some(refresh_token) = token.refresh_token.as_deref() {
-        set_process_env("GOOGLE_WORKSPACE_REFRESH_TOKEN", refresh_token);
+        crate::google_secrets::set_runtime_secret("GOOGLE_WORKSPACE_REFRESH_TOKEN", refresh_token);
         persist_api_key("GOOGLE_WORKSPACE_REFRESH_TOKEN", refresh_token);
     }
 
@@ -529,7 +624,7 @@ async fn handle_google_integration_callback(
 async fn disconnect_google_integration(
     axum::extract::State(state): axum::extract::State<SharedState>,
 ) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
-    set_process_env("GOOGLE_WORKSPACE_REFRESH_TOKEN", "");
+    crate::google_secrets::remove_runtime_secret("GOOGLE_WORKSPACE_REFRESH_TOKEN");
     persist_api_key("GOOGLE_WORKSPACE_REFRESH_TOKEN", "");
     state.set_google_workspace_connected(false);
     (
@@ -584,7 +679,7 @@ async fn get_google_integration_diagnostics(
 ) -> axum::Json<serde_json::Value> {
     let current = google_oauth_config(&state);
     let mut issues: Vec<String> = Vec::new();
-    let required_oauth_scopes: Vec<&str> = GOOGLE_OAUTH_SCOPES.split_whitespace().collect();
+    let required_oauth_scopes = google_oauth_scopes();
 
     let (
         configured,
@@ -734,12 +829,12 @@ async fn set_google_integration_config(
     });
 
     // Keep runtime credentials immediately available in-process.
-    set_process_env("GOOGLE_CLIENT_ID", client_id);
-    set_process_env("GOOGLE_CLIENT_SECRET", client_secret);
+    crate::google_secrets::set_runtime_secret("GOOGLE_CLIENT_ID", client_id);
+    crate::google_secrets::set_runtime_secret("GOOGLE_CLIENT_SECRET", client_secret);
     let effective_redirect_uri = normalized_redirect_uri
         .clone()
         .unwrap_or_else(|| default_google_redirect_uri(&state));
-    set_process_env("GOOGLE_REDIRECT_URI", &effective_redirect_uri);
+    crate::google_secrets::set_runtime_secret("GOOGLE_REDIRECT_URI", &effective_redirect_uri);
 
     // Best effort persistence for next restart.
     let persisted_client_id = persist_api_key("GOOGLE_CLIENT_ID", client_id);
@@ -1196,10 +1291,6 @@ fn persist_api_key(vault_key: &str, value: &str) -> bool {
     false
 }
 
-fn set_process_env(key: &str, value: &str) {
-    // SAFETY: this gateway intentionally supports runtime credential updates from its own API.
-    unsafe { std::env::set_var(key, value) };
-}
 
 fn google_integration_status_json(state: &SharedState) -> serde_json::Value {
     let oauth = google_oauth_config(state);
@@ -1253,8 +1344,11 @@ fn google_oauth_config(state: &SharedState) -> Option<GoogleOAuthConfig> {
 }
 
 fn google_oauth_secret(key: &str) -> Option<String> {
-    crate::bootstrap::default_vault_path()
-        .and_then(|path| opencrust_security::try_vault_get(&path, key))
+    crate::google_secrets::get_runtime_secret(key)
+        .or_else(|| {
+            crate::bootstrap::default_vault_path()
+                .and_then(|path| opencrust_security::try_vault_get(&path, key))
+        })
         .or_else(|| std::env::var(key).ok())
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
@@ -1276,7 +1370,10 @@ fn default_google_redirect_uri(state: &SharedState) -> String {
         "localhost" => "localhost",
         _ => "127.0.0.1",
     };
-    format!("http://{host}:3000/api/integrations/google/callback")
+    format!(
+        "http://{host}:{}/api/integrations/google/callback",
+        state.config.gateway.port
+    )
 }
 
 fn mask_client_id(client_id: &str) -> String {
@@ -1402,4 +1499,207 @@ fn read_cached_latest_version() -> Option<String> {
     let contents = std::fs::read_to_string(path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&contents).ok()?;
     v.get("latest_version")?.as_str().map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::Future;
+    use std::sync::{Mutex, OnceLock};
+
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::get;
+    use opencrust_agents::AgentRuntime;
+    use opencrust_channels::ChannelRegistry;
+    use opencrust_config::AppConfig;
+    use tower::ServiceExt;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build")
+            .block_on(future)
+    }
+
+    fn test_state(api_key: Option<&str>) -> SharedState {
+        let mut config = AppConfig::default();
+        config.gateway.api_key = api_key.map(ToString::to_string);
+        Arc::new(crate::state::AppState::new(
+            config,
+            AgentRuntime::new(),
+            ChannelRegistry::new(),
+        ))
+    }
+
+    fn protected_router(state: SharedState) -> Router {
+        Router::new()
+            .route("/protected", get(|| async { "ok" }))
+            .route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                require_gateway_api_key,
+            ))
+            .with_state(state)
+    }
+
+    #[test]
+    fn middleware_rejects_when_no_gateway_key_configured() {
+        let state = test_state(None);
+        let router = protected_router(state);
+        let resp = block_on(
+            router.oneshot(
+                Request::builder()
+                    .uri("/protected")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        )
+        .expect("request should complete");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn middleware_rejects_wrong_key_accepts_valid_header_and_query() {
+        let state = test_state(Some("secret-token"));
+        let router = protected_router(state);
+
+        let missing = block_on(
+            router.clone().oneshot(
+                Request::builder()
+                    .uri("/protected")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        )
+        .expect("request should complete");
+        assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+
+        let wrong = block_on(
+            router.clone().oneshot(
+                Request::builder()
+                    .uri("/protected")
+                    .header(axum::http::header::AUTHORIZATION, "Bearer wrong-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        )
+        .expect("request should complete");
+        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+
+        let header_ok = block_on(
+            router.clone().oneshot(
+                Request::builder()
+                    .uri("/protected")
+                    .header(axum::http::header::AUTHORIZATION, "Bearer secret-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        )
+        .expect("request should complete");
+        assert_eq!(header_ok.status(), StatusCode::OK);
+
+        let query_ok = block_on(
+            router.clone().oneshot(
+                Request::builder()
+                    .uri("/protected?token=secret-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        )
+        .expect("request should complete");
+        assert_eq!(query_ok.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn constant_time_eq_works() {
+        assert!(constant_time_token_eq("abc123", "abc123"));
+        assert!(!constant_time_token_eq("abc123", "abc124"));
+        assert!(!constant_time_token_eq("abc123", "abc1234"));
+    }
+
+    #[test]
+    fn valid_google_client_id() {
+        assert!(is_valid_google_client_id(
+            "1234567890-abcdef.apps.googleusercontent.com"
+        ));
+        assert!(!is_valid_google_client_id("not-a-client-id"));
+        assert!(!is_valid_google_client_id(
+            "abc123-abcdef.apps.googleusercontent.com"
+        ));
+    }
+
+    #[test]
+    fn valid_redirect_uri() {
+        assert!(is_valid_redirect_uri("http://127.0.0.1:3888/callback"));
+        assert!(is_valid_redirect_uri("https://example.com/callback"));
+        assert!(!is_valid_redirect_uri(""));
+        assert!(!is_valid_redirect_uri("not a url"));
+    }
+
+    #[test]
+    fn mask_client_id_works() {
+        assert_eq!(mask_client_id("1234567890"), "***");
+        assert_eq!(
+            mask_client_id("1234567890-abcdef.apps.googleusercontent.com"),
+            "123456***.com"
+        );
+    }
+
+    #[test]
+    fn default_redirect_uri_uses_gateway_port() {
+        let mut config = AppConfig::default();
+        config.gateway.host = "localhost".to_string();
+        config.gateway.port = 4555;
+        let state = Arc::new(crate::state::AppState::new(
+            config,
+            AgentRuntime::new(),
+            ChannelRegistry::new(),
+        ));
+        assert_eq!(
+            default_google_redirect_uri(&state),
+            "http://localhost:4555/api/integrations/google/callback"
+        );
+    }
+
+    #[test]
+    fn gmail_send_scope_defaults_false() {
+        let _guard = env_lock().lock().expect("env lock");
+        let old = std::env::var("OPENCRUST_GOOGLE_ENABLE_GMAIL_SEND_SCOPE").ok();
+
+        // SAFETY: test-only env mutation.
+        unsafe { std::env::remove_var("OPENCRUST_GOOGLE_ENABLE_GMAIL_SEND_SCOPE") };
+        assert!(!google_gmail_send_scope_enabled());
+
+        // SAFETY: test-only env mutation.
+        unsafe { std::env::set_var("OPENCRUST_GOOGLE_ENABLE_GMAIL_SEND_SCOPE", "true") };
+        assert!(google_gmail_send_scope_enabled());
+
+        match old {
+            Some(v) => unsafe { std::env::set_var("OPENCRUST_GOOGLE_ENABLE_GMAIL_SEND_SCOPE", v) },
+            None => unsafe { std::env::remove_var("OPENCRUST_GOOGLE_ENABLE_GMAIL_SEND_SCOPE") },
+        }
+    }
+
+    #[test]
+    fn placeholder_secret_detection() {
+        assert!(looks_like_placeholder_secret("your_google_client_secret_here"));
+        assert!(looks_like_placeholder_secret("set_a_long_random_passphrase_here"));
+        assert!(!looks_like_placeholder_secret("real-secret"));
+    }
+
+    #[test]
+    fn oauth_popup_escapes_html() {
+        let html = oauth_popup_result(true, "<script>alert('xss')</script>").0;
+        assert!(html.contains("&lt;script&gt;"));
+        // The escaped message appears inside <p> tags — no raw script injection.
+        assert!(html.contains("<p>&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;</p>")
+            || html.contains("<p>&lt;script&gt;alert('xss')&lt;/script&gt;</p>"));
+    }
 }
