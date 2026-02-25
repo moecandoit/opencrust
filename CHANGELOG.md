@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-02-25
+
+### Added
+- Full scheduling system overhaul (Stages 1-6) (#165)
+  - Exponential backoff retry (30s-240s, max 3 retries) for failed tasks
+  - `cancel_heartbeat` and `list_heartbeats` tools (session-scoped)
+  - Recurring tasks via interval or cron expressions (`cron` crate)
+  - Heartbeat chaining with depth limit (max 3), replacing boolean block
+  - Timezone support for `execute_at_iso` and cron expressions (`chrono-tz` crate)
+  - Cross-channel delivery with runtime validation against registered senders
+- Hourly cleanup of completed/failed/cancelled tasks (7-day retention)
+
+### Changed
+- Scheduler poll interval reduced from 60s to 5s for responsive reminders
+- `is_heartbeat: bool` replaced with `heartbeat_depth: u8` across all tool contexts
+- `complete_task` returns `Result<bool>` with status guard to prevent cancel/complete race
+
+### Fixed
+- Recurring task interval drift (anchor to `execute_at`, not `now`)
+- `recurrence_end_after_seconds` now relative to execution time, not schedule time
+- Cross-channel delivery no longer corrupts session's `channel_id`
+- `deliver_to_channel` validated against registered senders at execution time
+- `parse_timestamp` warns on failure instead of silently returning `now`
+
 ## [0.1.18] - 2026-02-24
 
 ### Changed
