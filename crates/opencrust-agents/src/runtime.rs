@@ -300,7 +300,7 @@ impl AgentRuntime {
             conversation_history,
             continuity_key,
             user_id,
-            false,
+            0,
         )
         .await
     }
@@ -326,13 +326,13 @@ impl AgentRuntime {
             conversation_history,
             continuity_key,
             user_id,
-            false,
+            0,
         )
         .await
     }
 
-    /// Process a scheduled heartbeat message. Tools receive `is_heartbeat = true`
-    /// so that recursive scheduling is blocked.
+    /// Process a scheduled heartbeat message. Tools receive the heartbeat depth
+    /// so that recursive scheduling is allowed up to a chain limit.
     pub async fn process_heartbeat(
         &self,
         session_id: &str,
@@ -340,6 +340,7 @@ impl AgentRuntime {
         conversation_history: &[ChatMessage],
         continuity_key: Option<&str>,
         user_id: Option<&str>,
+        heartbeat_depth: u8,
     ) -> Result<String> {
         self.process_message_impl(
             session_id,
@@ -348,7 +349,7 @@ impl AgentRuntime {
             conversation_history,
             continuity_key,
             user_id,
-            true,
+            heartbeat_depth,
         )
         .await
     }
@@ -375,7 +376,7 @@ impl AgentRuntime {
             session_summary,
             continuity_key,
             user_id,
-            false,
+            0,
         )
         .await
     }
@@ -427,7 +428,7 @@ impl AgentRuntime {
             session_summary,
             continuity_key,
             user_id,
-            false,
+            0,
         )
         .await
     }
@@ -571,7 +572,7 @@ impl AgentRuntime {
                     let context = crate::tools::ToolContext {
                         session_id: session_id.to_string(),
                         user_id: user_id.map(|s| s.to_string()),
-                        is_heartbeat: false,
+                        heartbeat_depth: 0,
                     };
                     let output = match self.find_tool(name) {
                         Some(tool) => tool
@@ -733,7 +734,7 @@ impl AgentRuntime {
                     let context = crate::tools::ToolContext {
                         session_id: session_id.to_string(),
                         user_id: user_id.map(|s| s.to_string()),
-                        is_heartbeat: false,
+                        heartbeat_depth: 0,
                     };
                     let output = match self.find_tool(name) {
                         Some(tool) => tool
@@ -771,7 +772,7 @@ impl AgentRuntime {
         conversation_history: &[ChatMessage],
         continuity_key: Option<&str>,
         user_id: Option<&str>,
-        is_heartbeat: bool,
+        heartbeat_depth: u8,
     ) -> Result<String> {
         let provider: Arc<dyn LlmProvider> = self
             .default_provider()
@@ -871,7 +872,7 @@ impl AgentRuntime {
                     let context = ToolContext {
                         session_id: session_id.to_string(),
                         user_id: user_id.map(|s| s.to_string()),
-                        is_heartbeat,
+                        heartbeat_depth,
                     };
                     let output = match self.find_tool(name) {
                         Some(tool) => tool
@@ -1127,7 +1128,7 @@ impl AgentRuntime {
                         let context = ToolContext {
                             session_id: session_id.to_string(),
                             user_id: user_id.map(|s| s.to_string()),
-                            is_heartbeat: false,
+                            heartbeat_depth: 0,
                         };
                         let output = match self.find_tool(name) {
                             Some(tool) => tool
@@ -1194,7 +1195,7 @@ impl AgentRuntime {
                             let context = ToolContext {
                                 session_id: session_id.to_string(),
                                 user_id: user_id.map(|s| s.to_string()),
-                                is_heartbeat: false,
+                                heartbeat_depth: 0,
                             };
                             let output = match self.find_tool(name) {
                                 Some(tool) => tool
@@ -1236,7 +1237,7 @@ impl AgentRuntime {
         session_summary: Option<&str>,
         continuity_key: Option<&str>,
         user_id: Option<&str>,
-        is_heartbeat: bool,
+        heartbeat_depth: u8,
     ) -> Result<(String, Option<String>)> {
         let provider: Arc<dyn LlmProvider> = self
             .default_provider()
@@ -1352,7 +1353,7 @@ impl AgentRuntime {
                     let context = ToolContext {
                         session_id: session_id.to_string(),
                         user_id: user_id.map(|s| s.to_string()),
-                        is_heartbeat,
+                        heartbeat_depth,
                     };
                     let output = match self.find_tool(name) {
                         Some(tool) => tool
@@ -1558,7 +1559,7 @@ impl AgentRuntime {
                         let context = ToolContext {
                             session_id: session_id.to_string(),
                             user_id: user_id.map(|s| s.to_string()),
-                            is_heartbeat: false,
+                            heartbeat_depth: 0,
                         };
                         let output = match self.find_tool(name) {
                             Some(tool) => tool
@@ -1623,7 +1624,7 @@ impl AgentRuntime {
                             let context = ToolContext {
                                 session_id: session_id.to_string(),
                                 user_id: user_id.map(|s| s.to_string()),
-                                is_heartbeat: false,
+                                heartbeat_depth: 0,
                             };
                             let output = match self.find_tool(name) {
                                 Some(tool) => tool

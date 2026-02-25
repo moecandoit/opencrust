@@ -2,7 +2,7 @@ use opencrust_common::{Error, Result};
 use rusqlite::Connection;
 use rusqlite::params;
 use std::path::Path;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Persisted message row loaded from the session store.
 #[derive(Debug, Clone)]
@@ -80,6 +80,29 @@ impl SessionStore {
                     ON scheduled_tasks(execute_at) WHERE status = 'pending';",
             )
             .map_err(|e| Error::Database(format!("migration failed: {e}")))?;
+
+        // Idempotent column additions for scheduling overhaul
+        let columns = [
+            ("retry_count", "INTEGER DEFAULT 0"),
+            ("max_retries", "INTEGER DEFAULT 3"),
+            ("next_retry_at", "TEXT"),
+            ("heartbeat_depth", "INTEGER DEFAULT 0"),
+            ("recurrence_type", "TEXT"),
+            ("recurrence_value", "TEXT"),
+            ("recurrence_end_at", "TEXT"),
+            ("deliver_to_channel", "TEXT"),
+            ("timezone", "TEXT"),
+        ];
+        for (col, col_type) in &columns {
+            let sql = format!("ALTER TABLE scheduled_tasks ADD COLUMN {col} {col_type}");
+            // Ignore "duplicate column" errors - column already exists
+            if let Err(e) = self.conn.execute(&sql, []) {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column") {
+                    return Err(Error::Database(format!("migration failed: {e}")));
+                }
+            }
+        }
 
         Ok(())
     }
@@ -211,10 +234,14 @@ impl SessionStore {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT t.id, t.session_id, s.channel_id, t.user_id, t.execute_at, t.payload, s.metadata
+                "SELECT t.id, t.session_id, s.channel_id, t.user_id, t.execute_at, t.payload,
+                        s.metadata, t.retry_count, t.max_retries, t.heartbeat_depth,
+                        t.recurrence_type, t.recurrence_value, t.recurrence_end_at,
+                        t.deliver_to_channel, t.timezone
                  FROM scheduled_tasks t
                  JOIN sessions s ON t.session_id = s.id
-                 WHERE t.status = 'pending' AND datetime(t.execute_at) <= datetime('now')
+                 WHERE t.status = 'pending'
+                   AND datetime(COALESCE(t.next_retry_at, t.execute_at)) <= datetime('now')
                  ORDER BY t.execute_at ASC
                  LIMIT 10",
             )
@@ -224,6 +251,7 @@ impl SessionStore {
             .query_map([], |row| {
                 let execute_at_raw: String = row.get(4)?;
                 let metadata_raw: String = row.get(6)?;
+                let end_at_raw: Option<String> = row.get(12)?;
                 Ok(ScheduledTask {
                     id: row.get(0)?,
                     session_id: row.get(1)?,
@@ -233,6 +261,14 @@ impl SessionStore {
                     payload: row.get(5)?,
                     session_metadata: serde_json::from_str(&metadata_raw)
                         .unwrap_or(serde_json::Value::Null),
+                    retry_count: row.get::<_, Option<i32>>(7)?.unwrap_or(0),
+                    max_retries: row.get::<_, Option<i32>>(8)?.unwrap_or(3),
+                    heartbeat_depth: row.get::<_, Option<u8>>(9)?.unwrap_or(0),
+                    recurrence_type: row.get(10)?,
+                    recurrence_value: row.get(11)?,
+                    recurrence_end_at: end_at_raw.map(|s| parse_timestamp(&s)),
+                    deliver_to_channel: row.get(13)?,
+                    timezone: row.get(14)?,
                 })
             })
             .map_err(|e| Error::Database(format!("failed to poll tasks: {e}")))?;
@@ -245,14 +281,17 @@ impl SessionStore {
     }
 
     /// Mark a scheduled task as completed.
-    pub fn complete_task(&self, task_id: &str) -> Result<()> {
-        self.conn
+    /// Returns true if the task was still pending and is now completed,
+    /// false if it was already cancelled or in another terminal state.
+    pub fn complete_task(&self, task_id: &str) -> Result<bool> {
+        let rows = self
+            .conn
             .execute(
-                "UPDATE scheduled_tasks SET status = 'completed' WHERE id = ?1",
+                "UPDATE scheduled_tasks SET status = 'completed' WHERE id = ?1 AND status = 'pending'",
                 params![task_id],
             )
             .map_err(|e| Error::Database(format!("failed to complete task: {e}")))?;
-        Ok(())
+        Ok(rows > 0)
     }
 
     /// Mark a scheduled task as failed so it won't be retried.
@@ -317,6 +356,223 @@ impl SessionStore {
             .map_err(|e| Error::Database(format!("failed to count pending tasks: {e}")))?;
         Ok(count)
     }
+
+    /// Retry a failed task with exponential backoff, or mark it as permanently failed.
+    /// Backoff schedule: 30s, 60s, 120s, 240s (doubles each retry).
+    pub fn retry_or_fail_task(&self, task_id: &str) -> Result<bool> {
+        let (retry_count, max_retries): (i32, i32) = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(retry_count, 0), COALESCE(max_retries, 3) FROM scheduled_tasks WHERE id = ?1",
+                params![task_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| Error::Database(format!("failed to read retry state: {e}")))?;
+
+        let new_count = retry_count + 1;
+        if new_count > max_retries {
+            self.fail_task(task_id)?;
+            return Ok(false);
+        }
+
+        let backoff_secs = 30i64 * (1 << retry_count.min(7));
+        let next_retry = chrono::Utc::now() + chrono::Duration::seconds(backoff_secs);
+
+        self.conn
+            .execute(
+                "UPDATE scheduled_tasks SET retry_count = ?1, next_retry_at = ?2 WHERE id = ?3",
+                params![new_count, next_retry.to_rfc3339(), task_id],
+            )
+            .map_err(|e| Error::Database(format!("failed to set retry: {e}")))?;
+        Ok(true)
+    }
+
+    /// Cancel a pending task, scoped to a session for safety.
+    pub fn cancel_task(&self, task_id: &str, session_id: &str) -> Result<bool> {
+        let rows = self
+            .conn
+            .execute(
+                "UPDATE scheduled_tasks SET status = 'cancelled' WHERE id = ?1 AND session_id = ?2 AND status = 'pending'",
+                params![task_id, session_id],
+            )
+            .map_err(|e| Error::Database(format!("failed to cancel task: {e}")))?;
+        Ok(rows > 0)
+    }
+
+    /// List pending tasks for a session, ordered by execute_at.
+    pub fn list_pending_tasks(&self, session_id: &str) -> Result<Vec<ScheduledTask>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT t.id, t.session_id, s.channel_id, t.user_id, t.execute_at, t.payload,
+                        s.metadata, t.retry_count, t.max_retries, t.heartbeat_depth,
+                        t.recurrence_type, t.recurrence_value, t.recurrence_end_at,
+                        t.deliver_to_channel, t.timezone
+                 FROM scheduled_tasks t
+                 JOIN sessions s ON t.session_id = s.id
+                 WHERE t.session_id = ?1 AND t.status = 'pending'
+                 ORDER BY t.execute_at ASC",
+            )
+            .map_err(|e| Error::Database(format!("failed to prepare list query: {e}")))?;
+
+        let rows = stmt
+            .query_map(params![session_id], |row| {
+                let execute_at_raw: String = row.get(4)?;
+                let metadata_raw: String = row.get(6)?;
+                let end_at_raw: Option<String> = row.get(12)?;
+                Ok(ScheduledTask {
+                    id: row.get(0)?,
+                    session_id: row.get(1)?,
+                    channel_id: row.get(2)?,
+                    user_id: row.get(3)?,
+                    execute_at: parse_timestamp(&execute_at_raw),
+                    payload: row.get(5)?,
+                    session_metadata: serde_json::from_str(&metadata_raw)
+                        .unwrap_or(serde_json::Value::Null),
+                    retry_count: row.get::<_, Option<i32>>(7)?.unwrap_or(0),
+                    max_retries: row.get::<_, Option<i32>>(8)?.unwrap_or(3),
+                    heartbeat_depth: row.get::<_, Option<u8>>(9)?.unwrap_or(0),
+                    recurrence_type: row.get(10)?,
+                    recurrence_value: row.get(11)?,
+                    recurrence_end_at: end_at_raw.map(|s| parse_timestamp(&s)),
+                    deliver_to_channel: row.get(13)?,
+                    timezone: row.get(14)?,
+                })
+            })
+            .map_err(|e| Error::Database(format!("failed to list tasks: {e}")))?;
+
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(row.map_err(|e| Error::Database(format!("failed to read task row: {e}")))?);
+        }
+        Ok(tasks)
+    }
+
+    /// Delete completed, failed, and cancelled tasks older than `older_than_days`.
+    /// Returns the number of deleted rows.
+    pub fn cleanup_completed_tasks(&self, older_than_days: i64) -> Result<usize> {
+        let deleted = self
+            .conn
+            .execute(
+                "DELETE FROM scheduled_tasks
+                 WHERE status IN ('completed', 'failed', 'cancelled')
+                   AND created_at < datetime('now', ?1)",
+                params![format!("-{older_than_days} days")],
+            )
+            .map_err(|e| Error::Database(format!("failed to cleanup tasks: {e}")))?;
+        Ok(deleted)
+    }
+
+    /// Schedule a task with full options (recurrence, heartbeat depth, cross-channel delivery).
+    #[allow(clippy::too_many_arguments)]
+    pub fn schedule_task_full(
+        &self,
+        session_id: &str,
+        user_id: &str,
+        execute_at: chrono::DateTime<chrono::Utc>,
+        payload: &str,
+        heartbeat_depth: u8,
+        recurrence_type: Option<&str>,
+        recurrence_value: Option<&str>,
+        recurrence_end_at: Option<chrono::DateTime<chrono::Utc>>,
+        deliver_to_channel: Option<&str>,
+        timezone: Option<&str>,
+    ) -> Result<String> {
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let end_at_str = recurrence_end_at.map(|dt| dt.to_rfc3339());
+        self.conn
+            .execute(
+                "INSERT INTO scheduled_tasks (id, session_id, user_id, execute_at, payload, status,
+                    heartbeat_depth, recurrence_type, recurrence_value, recurrence_end_at,
+                    deliver_to_channel, timezone)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    task_id,
+                    session_id,
+                    user_id,
+                    execute_at.to_rfc3339(),
+                    payload,
+                    heartbeat_depth,
+                    recurrence_type,
+                    recurrence_value,
+                    end_at_str,
+                    deliver_to_channel,
+                    timezone,
+                ],
+            )
+            .map_err(|e| Error::Database(format!("failed to schedule task: {e}")))?;
+        Ok(task_id)
+    }
+
+    /// After completing a recurring task, schedule the next occurrence.
+    /// Returns the new task ID if rescheduled, None if the chain is done.
+    pub fn reschedule_recurring_task(&self, task: &ScheduledTask) -> Result<Option<String>> {
+        let (rec_type, rec_value) = match (&task.recurrence_type, &task.recurrence_value) {
+            (Some(t), Some(v)) => (t.as_str(), v.as_str()),
+            _ => return Ok(None),
+        };
+
+        let now = chrono::Utc::now();
+
+        let next_at = match rec_type {
+            "interval" => {
+                let secs: i64 = rec_value
+                    .parse()
+                    .map_err(|_| Error::Database("invalid interval value".to_string()))?;
+                let interval = chrono::Duration::seconds(secs);
+                // Anchor to previous execute_at to prevent drift; skip forward if behind
+                let mut candidate = task.execute_at + interval;
+                while candidate <= now {
+                    candidate += interval;
+                }
+                candidate
+            }
+            "cron" => {
+                use std::str::FromStr;
+                let schedule = cron::Schedule::from_str(rec_value)
+                    .map_err(|e| Error::Database(format!("invalid cron expression: {e}")))?;
+                let tz: chrono_tz::Tz = task
+                    .timezone
+                    .as_deref()
+                    .unwrap_or("UTC")
+                    .parse()
+                    .unwrap_or_else(|_| {
+                        warn!(
+                            "invalid timezone '{}' in task {}, using UTC",
+                            task.timezone.as_deref().unwrap_or("?"),
+                            task.id
+                        );
+                        chrono_tz::Tz::UTC
+                    });
+                match schedule.upcoming(tz).next() {
+                    Some(dt) => dt.with_timezone(&chrono::Utc),
+                    None => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
+        };
+
+        // Check if past end time
+        if let Some(end_at) = task.recurrence_end_at
+            && next_at > end_at
+        {
+            return Ok(None);
+        }
+
+        self.schedule_task_full(
+            &task.session_id,
+            &task.user_id,
+            next_at,
+            &task.payload,
+            task.heartbeat_depth,
+            task.recurrence_type.as_deref(),
+            task.recurrence_value.as_deref(),
+            task.recurrence_end_at,
+            task.deliver_to_channel.as_deref(),
+            task.timezone.as_deref(),
+        )
+        .map(Some)
+    }
 }
 
 /// Represents a scheduled background task.
@@ -329,17 +585,31 @@ pub struct ScheduledTask {
     pub execute_at: chrono::DateTime<chrono::Utc>,
     pub payload: String,
     pub session_metadata: serde_json::Value,
+    pub retry_count: i32,
+    pub max_retries: i32,
+    pub heartbeat_depth: u8,
+    pub recurrence_type: Option<String>,
+    pub recurrence_value: Option<String>,
+    pub recurrence_end_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub deliver_to_channel: Option<String>,
+    pub timezone: Option<String>,
 }
 
 fn parse_timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&chrono::Utc))
-        .unwrap_or_else(|_| chrono::Utc::now())
+        .unwrap_or_else(|e| {
+            warn!(
+                "failed to parse timestamp '{}': {e}, falling back to now",
+                value
+            );
+            chrono::Utc::now()
+        })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SessionStore;
+    use super::{ScheduledTask, SessionStore};
     use chrono::Duration;
 
     #[test]
@@ -427,14 +697,19 @@ mod tests {
             Some("bar")
         );
 
-        store
+        let completed = store
             .complete_task(&task_id)
             .expect("complete should succeed");
+        assert!(completed, "pending task should be marked completed");
 
         let due_after = store
             .poll_due_tasks()
             .expect("poll after complete should succeed");
         assert_eq!(due_after.len(), 0);
+
+        // Completing again should return false (already completed)
+        let re_completed = store.complete_task(&task_id).unwrap();
+        assert!(!re_completed, "already-completed task should return false");
     }
 
     #[test]
@@ -533,5 +808,271 @@ mod tests {
 
         assert_eq!(store.count_pending_tasks_for_session("s1").unwrap(), 2);
         assert_eq!(store.count_pending_tasks_for_session("s2").unwrap(), 1);
+    }
+
+    #[test]
+    fn retry_or_fail_task_retries_then_fails() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let due_time = chrono::Utc::now() - Duration::minutes(1);
+        let task_id = store.schedule_task("s1", "u1", due_time, "flaky").unwrap();
+
+        // First 3 retries should return true (task stays pending with future next_retry_at)
+        for i in 0..3 {
+            let retried = store.retry_or_fail_task(&task_id).unwrap();
+            assert!(retried, "retry {} should succeed", i + 1);
+        }
+
+        // 4th attempt exceeds max_retries (default 3), should return false
+        let retried = store.retry_or_fail_task(&task_id).unwrap();
+        assert!(!retried, "should be permanently failed now");
+
+        // Task should not appear in poll
+        let due = store.poll_due_tasks().unwrap();
+        assert!(due.is_empty());
+    }
+
+    #[test]
+    fn cancel_task_scoped_to_session() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+        store
+            .upsert_session("s2", "web", "u2", &serde_json::json!({}))
+            .unwrap();
+
+        let future = chrono::Utc::now() + Duration::minutes(10);
+        let task_id = store
+            .schedule_task("s1", "u1", future, "cancel me")
+            .unwrap();
+
+        // Cancel from wrong session should fail
+        assert!(!store.cancel_task(&task_id, "s2").unwrap());
+        assert_eq!(store.count_pending_tasks_for_session("s1").unwrap(), 1);
+
+        // Cancel from correct session should succeed
+        assert!(store.cancel_task(&task_id, "s1").unwrap());
+        assert_eq!(store.count_pending_tasks_for_session("s1").unwrap(), 0);
+
+        // Double cancel should return false (already cancelled)
+        assert!(!store.cancel_task(&task_id, "s1").unwrap());
+    }
+
+    #[test]
+    fn list_pending_tasks_returns_ordered() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let now = chrono::Utc::now();
+        store
+            .schedule_task("s1", "u1", now + Duration::minutes(5), "later")
+            .unwrap();
+        store
+            .schedule_task("s1", "u1", now + Duration::minutes(1), "sooner")
+            .unwrap();
+
+        let tasks = store.list_pending_tasks("s1").unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].payload, "sooner");
+        assert_eq!(tasks[1].payload, "later");
+    }
+
+    #[test]
+    fn schedule_task_full_stores_all_fields() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let execute_at = chrono::Utc::now() + Duration::minutes(5);
+        let end_at = chrono::Utc::now() + Duration::hours(24);
+
+        let task_id = store
+            .schedule_task_full(
+                "s1",
+                "u1",
+                execute_at,
+                "recurring check",
+                2,
+                Some("interval"),
+                Some("300"),
+                Some(end_at),
+                Some("telegram"),
+                Some("America/New_York"),
+            )
+            .unwrap();
+
+        let tasks = store.list_pending_tasks("s1").unwrap();
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.id, task_id);
+        assert_eq!(task.heartbeat_depth, 2);
+        assert_eq!(task.recurrence_type.as_deref(), Some("interval"));
+        assert_eq!(task.recurrence_value.as_deref(), Some("300"));
+        assert!(task.recurrence_end_at.is_some());
+        assert_eq!(task.deliver_to_channel.as_deref(), Some("telegram"));
+        assert_eq!(task.timezone.as_deref(), Some("America/New_York"));
+    }
+
+    #[test]
+    fn reschedule_recurring_interval_task() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let past = chrono::Utc::now() - Duration::minutes(1);
+        let task = ScheduledTask {
+            id: "task-1".to_string(),
+            session_id: "s1".to_string(),
+            channel_id: "web".to_string(),
+            user_id: "u1".to_string(),
+            execute_at: past,
+            payload: "interval task".to_string(),
+            session_metadata: serde_json::json!({}),
+            retry_count: 0,
+            max_retries: 3,
+            heartbeat_depth: 1,
+            recurrence_type: Some("interval".to_string()),
+            recurrence_value: Some("60".to_string()),
+            recurrence_end_at: None,
+            deliver_to_channel: None,
+            timezone: None,
+        };
+
+        let new_id = store
+            .reschedule_recurring_task(&task)
+            .unwrap()
+            .expect("should reschedule");
+
+        let tasks = store.list_pending_tasks("s1").unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, new_id);
+        assert_eq!(tasks[0].recurrence_type.as_deref(), Some("interval"));
+        assert_eq!(tasks[0].recurrence_value.as_deref(), Some("60"));
+        assert_eq!(tasks[0].heartbeat_depth, 1);
+    }
+
+    #[test]
+    fn reschedule_non_recurring_returns_none() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        let task = ScheduledTask {
+            id: "task-1".to_string(),
+            session_id: "s1".to_string(),
+            channel_id: "web".to_string(),
+            user_id: "u1".to_string(),
+            execute_at: chrono::Utc::now(),
+            payload: "one-shot".to_string(),
+            session_metadata: serde_json::json!({}),
+            retry_count: 0,
+            max_retries: 3,
+            heartbeat_depth: 0,
+            recurrence_type: None,
+            recurrence_value: None,
+            recurrence_end_at: None,
+            deliver_to_channel: None,
+            timezone: None,
+        };
+
+        assert!(store.reschedule_recurring_task(&task).unwrap().is_none());
+    }
+
+    #[test]
+    fn reschedule_stops_after_end_at() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let task = ScheduledTask {
+            id: "task-1".to_string(),
+            session_id: "s1".to_string(),
+            channel_id: "web".to_string(),
+            user_id: "u1".to_string(),
+            execute_at: chrono::Utc::now(),
+            payload: "expiring".to_string(),
+            session_metadata: serde_json::json!({}),
+            retry_count: 0,
+            max_retries: 3,
+            heartbeat_depth: 0,
+            recurrence_type: Some("interval".to_string()),
+            recurrence_value: Some("3600".to_string()),
+            // End time in the past - next occurrence would be past it
+            recurrence_end_at: Some(chrono::Utc::now() - Duration::minutes(1)),
+            deliver_to_channel: None,
+            timezone: None,
+        };
+
+        assert!(store.reschedule_recurring_task(&task).unwrap().is_none());
+    }
+
+    #[test]
+    fn poll_due_tasks_respects_next_retry_at() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let past = chrono::Utc::now() - Duration::minutes(1);
+        let task_id = store.schedule_task("s1", "u1", past, "retry me").unwrap();
+
+        // Initially due
+        assert_eq!(store.poll_due_tasks().unwrap().len(), 1);
+
+        // Set retry - next_retry_at in the future
+        store.retry_or_fail_task(&task_id).unwrap();
+
+        // Should NOT be due (next_retry_at is 30+ seconds in the future)
+        assert_eq!(store.poll_due_tasks().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn cleanup_completed_tasks_deletes_old_rows() {
+        let store = SessionStore::in_memory().expect("in-memory store should open");
+        store
+            .upsert_session("s1", "web", "u1", &serde_json::json!({}))
+            .unwrap();
+
+        let past = chrono::Utc::now() - Duration::minutes(1);
+        let task_id = store.schedule_task("s1", "u1", past, "done").unwrap();
+        store.complete_task(&task_id).unwrap();
+
+        // Backdate the created_at to 8 days ago so it qualifies for 7-day cleanup
+        store
+            .connection()
+            .execute(
+                "UPDATE scheduled_tasks SET created_at = datetime('now', '-8 days') WHERE id = ?1",
+                rusqlite::params![task_id],
+            )
+            .unwrap();
+
+        let deleted = store.cleanup_completed_tasks(7).unwrap();
+        assert_eq!(deleted, 1);
+
+        // Pending tasks should not be affected
+        let task_id2 = store
+            .schedule_task(
+                "s1",
+                "u1",
+                chrono::Utc::now() + Duration::hours(1),
+                "pending",
+            )
+            .unwrap();
+        store
+            .connection()
+            .execute(
+                "UPDATE scheduled_tasks SET created_at = datetime('now', '-8 days') WHERE id = ?1",
+                rusqlite::params![task_id2],
+            )
+            .unwrap();
+
+        let deleted2 = store.cleanup_completed_tasks(7).unwrap();
+        assert_eq!(deleted2, 0);
     }
 }

@@ -64,7 +64,19 @@ impl GatewayServer {
                 state.set_session_store(Arc::clone(&store));
                 state
                     .agents
-                    .register_tool(Box::new(opencrust_agents::ScheduleHeartbeat::new(store)));
+                    .register_tool(Box::new(opencrust_agents::ScheduleHeartbeat::new(
+                        Arc::clone(&store),
+                    )));
+                state
+                    .agents
+                    .register_tool(Box::new(opencrust_agents::CancelHeartbeat::new(
+                        Arc::clone(&store),
+                    )));
+                state
+                    .agents
+                    .register_tool(Box::new(opencrust_agents::ListHeartbeats::new(Arc::clone(
+                        &store,
+                    ))));
                 info!("session store opened at {}", sessions_db.display());
             }
             Err(e) => {
@@ -132,11 +144,24 @@ impl GatewayServer {
         // Start background scheduler loop
         let scheduler_state = Arc::clone(&state);
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+            let mut tick_count: u32 = 0;
             loop {
                 interval.tick().await;
                 if let Err(e) = run_scheduler(&scheduler_state).await {
                     tracing::error!("Scheduler error: {e}");
+                }
+                tick_count = tick_count.wrapping_add(1);
+                // Cleanup old completed/failed/cancelled tasks every ~hour (720 * 5s)
+                if tick_count.is_multiple_of(720)
+                    && let Some(store_mutex) = &scheduler_state.session_store
+                {
+                    let store = store_mutex.lock().await;
+                    match store.cleanup_completed_tasks(7) {
+                        Ok(n) if n > 0 => info!("cleaned up {n} old scheduled tasks"),
+                        Err(e) => tracing::error!("task cleanup failed: {e}"),
+                        _ => {}
+                    }
                 }
             }
         });
@@ -373,10 +398,22 @@ async fn run_scheduler(state: &AppState) -> Result<()> {
 
     for task in tasks {
         if let Err(e) = execute_scheduled_task(state, store_mutex, &task).await {
-            tracing::error!("Scheduled task {} failed: {e} — marking as failed", task.id);
+            tracing::error!("Scheduled task {} failed: {e}", task.id);
             let store = store_mutex.lock().await;
-            if let Err(fe) = store.fail_task(&task.id) {
-                tracing::error!("Failed to mark task {} as failed: {fe}", task.id);
+            match store.retry_or_fail_task(&task.id) {
+                Ok(true) => {
+                    info!(
+                        "task {} queued for retry (attempt {})",
+                        task.id,
+                        task.retry_count + 1
+                    );
+                }
+                Ok(false) => {
+                    tracing::error!("task {} permanently failed after max retries", task.id);
+                }
+                Err(fe) => {
+                    tracing::error!("failed to update retry state for task {}: {fe}", task.id);
+                }
             }
         }
     }
@@ -388,12 +425,27 @@ async fn execute_scheduled_task(
     store_mutex: &Arc<Mutex<SessionStore>>,
     task: &opencrust_db::ScheduledTask,
 ) -> Result<()> {
-    let channel_type = &task.channel_id;
+    // Resolve delivery channel: use override only if a sender is actually registered,
+    // otherwise fall back to the session's original channel.
+    let delivery_channel = if let Some(ref override_ch) = task.deliver_to_channel {
+        if state.channel_senders.contains_key(override_ch.as_str()) {
+            override_ch.as_str()
+        } else {
+            tracing::warn!(
+                "deliver_to_channel '{}' not registered, falling back to session channel '{}'",
+                override_ch,
+                task.channel_id
+            );
+            &task.channel_id
+        }
+    } else {
+        &task.channel_id
+    };
 
     let message = Message {
         id: uuid::Uuid::new_v4().to_string(),
         session_id: SessionId::from_string(&task.session_id),
-        channel_id: ChannelId::from_string(channel_type),
+        channel_id: ChannelId::from_string(delivery_channel),
         user_id: UserId::from_string(&task.user_id),
         direction: MessageDirection::Incoming,
         content: MessageContent::System(task.payload.clone()),
@@ -413,11 +465,12 @@ async fn execute_scheduled_task(
         )?;
     }
 
-    // 2. Hydrate session history and invoke agent runtime
+    // 2. Hydrate session history with the ORIGINAL session channel to avoid
+    //    corrupting the session's channel_id when delivering cross-channel.
     state
         .hydrate_session_history(
             &task.session_id,
-            Some(channel_type.as_str()),
+            Some(&task.channel_id),
             Some(task.user_id.as_str()),
         )
         .await;
@@ -435,13 +488,14 @@ async fn execute_scheduled_task(
             &history,
             continuity_key.as_deref(),
             Some(task.user_id.as_str()),
+            task.heartbeat_depth,
         )
         .await?;
 
     let response_msg = Message {
         id: uuid::Uuid::new_v4().to_string(),
         session_id: SessionId::from_string(&task.session_id),
-        channel_id: ChannelId::from_string(channel_type),
+        channel_id: ChannelId::from_string(delivery_channel),
         user_id: UserId::from_string("genesis"),
         direction: MessageDirection::Outgoing,
         content: MessageContent::Text(response_text.clone()),
@@ -462,21 +516,38 @@ async fn execute_scheduled_task(
     }
 
     // 4. Best-effort delivery to channel adapter via sender handle.
-    if let Some(sender) = state.channel_senders.get(channel_type.as_str()) {
+    if let Some(sender) = state.channel_senders.get(delivery_channel) {
         if let Err(e) = sender.send_message(&response_msg).await {
             tracing::error!("Failed to send scheduled response: {e}");
         }
     } else {
         tracing::warn!(
             "Scheduled response persisted but no channel sender registered for: {}",
-            channel_type
+            delivery_channel
         );
     }
 
-    // 5. Complete task
+    // 5. Complete task and reschedule if recurring.
+    //    Only reschedule if the task was still pending (not cancelled during execution).
     {
         let store = store_mutex.lock().await;
-        store.complete_task(&task.id)?;
+        let was_completed = store.complete_task(&task.id)?;
+        if was_completed {
+            match store.reschedule_recurring_task(task) {
+                Ok(Some(new_id)) => {
+                    info!("recurring task {} rescheduled as {}", task.id, new_id);
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::error!("failed to reschedule recurring task {}: {e}", task.id);
+                }
+            }
+        } else {
+            info!(
+                "task {} was cancelled during execution, skipping reschedule",
+                task.id
+            );
+        }
     }
 
     Ok(())

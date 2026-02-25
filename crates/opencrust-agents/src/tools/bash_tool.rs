@@ -128,7 +128,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
-            is_heartbeat: false,
+            heartbeat_depth: 0,
         };
         let output = tool
             .execute(&ctx, serde_json::json!({"command": "echo hello"}))
@@ -149,7 +149,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
-            is_heartbeat: false,
+            heartbeat_depth: 0,
         };
         let output = tool
             .execute(&ctx, serde_json::json!({"command": cmd}))
@@ -164,7 +164,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
-            is_heartbeat: false,
+            heartbeat_depth: 0,
         };
         let result = tool.execute(&ctx, serde_json::json!({})).await;
         assert!(result.is_err());
@@ -181,7 +181,7 @@ mod tests {
         let ctx = ToolContext {
             session_id: "test".into(),
             user_id: None,
-            is_heartbeat: false,
+            heartbeat_depth: 0,
         };
         let output = tool
             .execute(&ctx, serde_json::json!({"command": cmd}))

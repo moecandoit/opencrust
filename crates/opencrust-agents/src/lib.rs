@@ -20,8 +20,8 @@ pub use providers::{
 };
 pub use runtime::AgentRuntime;
 pub use tools::{
-    BashTool, FileReadTool, FileWriteTool, ScheduleHeartbeat, Tool, ToolContext, ToolOutput,
-    WebFetchTool, WebSearchTool,
+    BashTool, CancelHeartbeat, FileReadTool, FileWriteTool, ListHeartbeats, ScheduleHeartbeat,
+    Tool, ToolContext, ToolOutput, WebFetchTool, WebSearchTool,
 };
 
 #[cfg(feature = "mcp")]

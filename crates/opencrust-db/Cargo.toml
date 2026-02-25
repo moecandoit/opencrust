@@ -17,3 +17,5 @@ chrono = { workspace = true }
 async-trait = { workspace = true }
 uuid = { workspace = true }
 sqlite-vec = { workspace = true }
+cron = "0.15"
+chrono-tz = "0.10"

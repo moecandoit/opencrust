@@ -8,7 +8,7 @@ pub mod web_search_tool;
 pub use bash_tool::BashTool;
 pub use file_read_tool::FileReadTool;
 pub use file_write_tool::FileWriteTool;
-pub use schedule::ScheduleHeartbeat;
+pub use schedule::{CancelHeartbeat, ListHeartbeats, ScheduleHeartbeat};
 pub use web_fetch_tool::WebFetchTool;
 pub use web_search_tool::WebSearchTool;
 
@@ -21,10 +21,10 @@ use serde::{Deserialize, Serialize};
 pub struct ToolContext {
     pub session_id: String,
     pub user_id: Option<String>,
-    /// When true, this execution is from a scheduled heartbeat.
-    /// Used to prevent recursive self-scheduling.
+    /// Heartbeat nesting depth. 0 = normal user request, 1+ = heartbeat execution.
+    /// Scheduling is allowed up to depth 3 to enable chaining.
     #[serde(default)]
-    pub is_heartbeat: bool,
+    pub heartbeat_depth: u8,
 }
 
 /// Trait for tools that agents can invoke (bash, browser, file operations, etc.).

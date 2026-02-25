@@ -136,7 +136,7 @@ mod tests {
         ToolContext {
             session_id: "test".into(),
             user_id: None,
-            is_heartbeat: false,
+            heartbeat_depth: 0,
         }
     }
 
