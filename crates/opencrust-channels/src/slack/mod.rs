@@ -12,7 +12,7 @@ use reqwest::Client;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 
-use crate::traits::{Channel, ChannelStatus};
+use crate::traits::{ChannelLifecycle, ChannelSender, ChannelStatus};
 use opencrust_common::{Message, MessageContent, Result};
 
 /// Callback invoked when the bot receives a text message from Slack.
@@ -55,14 +55,32 @@ impl SlackChannel {
     }
 }
 
+/// Lightweight send-only handle for Slack. Holds a bot token for API calls.
+pub struct SlackSender {
+    bot_token: String,
+}
+
 #[async_trait]
-impl Channel for SlackChannel {
+impl ChannelSender for SlackSender {
     fn channel_type(&self) -> &str {
         "slack"
     }
 
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        slack_send_message(&self.bot_token, message).await
+    }
+}
+
+#[async_trait]
+impl ChannelLifecycle for SlackChannel {
     fn display_name(&self) -> &str {
         &self.display
+    }
+
+    fn create_sender(&self) -> Box<dyn ChannelSender> {
+        Box::new(SlackSender {
+            bot_token: self.bot_token.clone(),
+        })
     }
 
     async fn connect(&mut self) -> Result<()> {
@@ -92,36 +110,48 @@ impl Channel for SlackChannel {
         Ok(())
     }
 
-    async fn send_message(&self, message: &Message) -> Result<()> {
-        let channel_id = message
-            .metadata
-            .get("slack_channel_id")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                opencrust_common::Error::Channel("missing slack_channel_id in metadata".into())
-            })?;
-
-        let text = match &message.content {
-            MessageContent::Text(t) => t.clone(),
-            _ => {
-                return Err(opencrust_common::Error::Channel(
-                    "only text messages are supported for slack send".into(),
-                ));
-            }
-        };
-
-        let client = Client::new();
-        let formatted = fmt::to_slack_mrkdwn(&text);
-        api::post_message(&client, &self.bot_token, channel_id, &formatted)
-            .await
-            .map_err(|e| opencrust_common::Error::Channel(format!("slack send failed: {e}")))?;
-
-        Ok(())
-    }
-
     fn status(&self) -> ChannelStatus {
         self.status.clone()
     }
+}
+
+#[async_trait]
+impl ChannelSender for SlackChannel {
+    fn channel_type(&self) -> &str {
+        "slack"
+    }
+
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        slack_send_message(&self.bot_token, message).await
+    }
+}
+
+/// Shared send logic used by both `SlackChannel` and `SlackSender`.
+async fn slack_send_message(bot_token: &str, message: &Message) -> Result<()> {
+    let channel_id = message
+        .metadata
+        .get("slack_channel_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            opencrust_common::Error::Channel("missing slack_channel_id in metadata".into())
+        })?;
+
+    let text = match &message.content {
+        MessageContent::Text(t) => t.clone(),
+        _ => {
+            return Err(opencrust_common::Error::Channel(
+                "only text messages are supported for slack send".into(),
+            ));
+        }
+    };
+
+    let client = Client::new();
+    let formatted = fmt::to_slack_mrkdwn(&text);
+    api::post_message(&client, bot_token, channel_id, &formatted)
+        .await
+        .map_err(|e| opencrust_common::Error::Channel(format!("slack send failed: {e}")))?;
+
+    Ok(())
 }
 
 /// Main Socket Mode event loop with automatic reconnection.

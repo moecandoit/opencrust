@@ -129,7 +129,20 @@ async fn web_chat() -> Html<String> {
 async fn status(
     axum::extract::State(state): axum::extract::State<SharedState>,
 ) -> axum::Json<serde_json::Value> {
-    let channels = state.channels.list();
+    let mut channels: Vec<String> = state
+        .channels
+        .list()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+
+    // Include channels registered via sender handles (the primary source).
+    for entry in state.channel_senders.iter() {
+        let ct = entry.key().clone();
+        if !channels.contains(&ct) {
+            channels.push(ct);
+        }
+    }
 
     // Gather LLM provider info from config
     let llm: serde_json::Value = state

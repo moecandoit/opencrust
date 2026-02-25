@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 
 use crate::telegram_fmt::to_telegram_markdown;
-use crate::traits::{Channel, ChannelStatus};
+use crate::traits::{ChannelLifecycle, ChannelSender, ChannelStatus};
 use opencrust_common::{Message, MessageContent, Result};
 
 /// Media attachment extracted from an incoming Telegram message.
@@ -198,14 +198,32 @@ async fn extract_content(
     None
 }
 
+/// Lightweight send-only handle for Telegram. Holds a pre-built `Bot` instance.
+pub struct TelegramSender {
+    bot: Bot,
+}
+
 #[async_trait]
-impl Channel for TelegramChannel {
+impl ChannelSender for TelegramSender {
     fn channel_type(&self) -> &str {
         "telegram"
     }
 
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        telegram_send_message(&self.bot, message).await
+    }
+}
+
+#[async_trait]
+impl ChannelLifecycle for TelegramChannel {
     fn display_name(&self) -> &str {
         &self.display
+    }
+
+    fn create_sender(&self) -> Box<dyn ChannelSender> {
+        Box::new(TelegramSender {
+            bot: Bot::new(&self.bot_token),
+        })
     }
 
     async fn connect(&mut self) -> Result<()> {
@@ -433,75 +451,86 @@ impl Channel for TelegramChannel {
         Ok(())
     }
 
+    fn status(&self) -> ChannelStatus {
+        self.status.clone()
+    }
+}
+
+#[async_trait]
+impl ChannelSender for TelegramChannel {
+    fn channel_type(&self) -> &str {
+        "telegram"
+    }
+
     async fn send_message(&self, message: &Message) -> Result<()> {
         let bot = self
             .bot
             .as_ref()
             .ok_or_else(|| opencrust_common::Error::Channel("telegram bot not connected".into()))?;
+        telegram_send_message(bot, message).await
+    }
+}
 
-        let chat_id: i64 = message
-            .metadata
-            .get("telegram_chat_id")
-            .and_then(|v| v.as_i64())
-            .ok_or_else(|| {
-                opencrust_common::Error::Channel("missing telegram_chat_id in metadata".into())
-            })?;
+/// Shared send logic used by both `TelegramChannel` and `TelegramSender`.
+async fn telegram_send_message(bot: &Bot, message: &Message) -> Result<()> {
+    let chat_id: i64 = message
+        .metadata
+        .get("telegram_chat_id")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| {
+            opencrust_common::Error::Channel("missing telegram_chat_id in metadata".into())
+        })?;
 
-        let tg_chat_id = ChatId(chat_id);
+    let tg_chat_id = ChatId(chat_id);
 
-        match &message.content {
-            MessageContent::Text(text) => {
-                let formatted = to_telegram_markdown(text);
-                let send_result = bot
-                    .send_message(tg_chat_id, &formatted)
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .await;
-                if send_result.is_err() {
-                    // Fallback: plain text
-                    bot.send_message(tg_chat_id, text).await.map_err(|e| {
-                        opencrust_common::Error::Channel(format!("telegram send failed: {e}"))
-                    })?;
-                }
-            }
-            MessageContent::Image { url, caption } => {
-                bot.send_photo(
-                    tg_chat_id,
-                    InputFile::url(url.parse().map_err(|e| {
-                        opencrust_common::Error::Channel(format!("invalid image url: {e}"))
-                    })?),
-                )
-                .caption(caption.as_deref().unwrap_or(""))
-                .await
-                .map_err(|e| {
-                    opencrust_common::Error::Channel(format!("telegram send_photo failed: {e}"))
+    match &message.content {
+        MessageContent::Text(text) => {
+            let formatted = to_telegram_markdown(text);
+            let send_result = bot
+                .send_message(tg_chat_id, &formatted)
+                .parse_mode(ParseMode::MarkdownV2)
+                .await;
+            if send_result.is_err() {
+                // Fallback: plain text
+                bot.send_message(tg_chat_id, text).await.map_err(|e| {
+                    opencrust_common::Error::Channel(format!("telegram send failed: {e}"))
                 })?;
-            }
-            MessageContent::File { url, filename } => {
-                bot.send_document(
-                    tg_chat_id,
-                    InputFile::url(url.parse().map_err(|e| {
-                        opencrust_common::Error::Channel(format!("invalid file url: {e}"))
-                    })?),
-                )
-                .caption(filename)
-                .await
-                .map_err(|e| {
-                    opencrust_common::Error::Channel(format!("telegram send_document failed: {e}"))
-                })?;
-            }
-            _ => {
-                return Err(opencrust_common::Error::Channel(
-                    "unsupported message content type for telegram send".into(),
-                ));
             }
         }
-
-        Ok(())
+        MessageContent::Image { url, caption } => {
+            bot.send_photo(
+                tg_chat_id,
+                InputFile::url(url.parse().map_err(|e| {
+                    opencrust_common::Error::Channel(format!("invalid image url: {e}"))
+                })?),
+            )
+            .caption(caption.as_deref().unwrap_or(""))
+            .await
+            .map_err(|e| {
+                opencrust_common::Error::Channel(format!("telegram send_photo failed: {e}"))
+            })?;
+        }
+        MessageContent::File { url, filename } => {
+            bot.send_document(
+                tg_chat_id,
+                InputFile::url(url.parse().map_err(|e| {
+                    opencrust_common::Error::Channel(format!("invalid file url: {e}"))
+                })?),
+            )
+            .caption(filename)
+            .await
+            .map_err(|e| {
+                opencrust_common::Error::Channel(format!("telegram send_document failed: {e}"))
+            })?;
+        }
+        _ => {
+            return Err(opencrust_common::Error::Channel(
+                "unsupported message content type for telegram send".into(),
+            ));
+        }
     }
 
-    fn status(&self) -> ChannelStatus {
-        self.status.clone()
-    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -8,15 +8,40 @@ use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use crate::traits::{Channel, ChannelStatus};
+use crate::traits::{ChannelLifecycle, ChannelSender, ChannelStatus};
 use opencrust_common::{Message, MessageContent, Result};
 
 use super::WhatsAppOnMessageFn;
+
+/// Shared sender handle that gets populated when the sidecar process starts.
+type SharedStdinTx = Arc<tokio::sync::Mutex<Option<mpsc::Sender<String>>>>;
+
+/// Lightweight send-only handle for WhatsApp Web.
+pub struct WhatsAppWebSender {
+    shared_stdin_tx: SharedStdinTx,
+}
+
+#[async_trait]
+impl ChannelSender for WhatsAppWebSender {
+    fn channel_type(&self) -> &str {
+        "whatsapp-web"
+    }
+
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        let guard = self.shared_stdin_tx.lock().await;
+        let tx = guard.as_ref().ok_or_else(|| {
+            opencrust_common::Error::Channel("whatsapp-web sidecar not connected".into())
+        })?;
+        whatsapp_web_send_message(tx, message).await
+    }
+}
 
 /// Sidecar-driven WhatsApp Web channel using Baileys (QR code pairing).
 pub struct WhatsAppWebChannel {
     child: Option<Child>,
     stdin_tx: Option<mpsc::Sender<String>>,
+    /// Shared sender handle exposed via `create_sender()`.
+    shared_stdin_tx: SharedStdinTx,
     status: ChannelStatus,
     display: String,
     on_message: WhatsAppOnMessageFn,
@@ -32,6 +57,7 @@ impl WhatsAppWebChannel {
         Self {
             child: None,
             stdin_tx: None,
+            shared_stdin_tx: Arc::new(tokio::sync::Mutex::new(None)),
             status: ChannelStatus::Disconnected,
             display: "WhatsApp Web".to_string(),
             on_message,
@@ -127,26 +153,18 @@ impl WhatsAppWebChannel {
         info!("whatsapp-web: npm install completed");
         Ok(())
     }
-
-    /// Send a JSON command to the sidecar's stdin.
-    async fn send_command(&self, json: &str) -> Result<()> {
-        if let Some(tx) = &self.stdin_tx {
-            tx.send(json.to_string()).await.map_err(|e| {
-                opencrust_common::Error::Channel(format!("failed to send to sidecar: {e}"))
-            })?;
-        }
-        Ok(())
-    }
 }
 
 #[async_trait]
-impl Channel for WhatsAppWebChannel {
-    fn channel_type(&self) -> &str {
-        "whatsapp-web"
-    }
-
+impl ChannelLifecycle for WhatsAppWebChannel {
     fn display_name(&self) -> &str {
         &self.display
+    }
+
+    fn create_sender(&self) -> Box<dyn ChannelSender> {
+        Box::new(WhatsAppWebSender {
+            shared_stdin_tx: Arc::clone(&self.shared_stdin_tx),
+        })
     }
 
     async fn connect(&mut self) -> Result<()> {
@@ -194,6 +212,12 @@ impl Channel for WhatsAppWebChannel {
         // Writer task: forward commands from channel to sidecar stdin
         let (stdin_tx, mut stdin_rx) = mpsc::channel::<String>(64);
         self.stdin_tx = Some(stdin_tx.clone());
+
+        // Populate shared sender handle for create_sender() consumers
+        {
+            let mut shared = self.shared_stdin_tx.lock().await;
+            *shared = Some(stdin_tx.clone());
+        }
 
         tokio::spawn(async move {
             let mut writer = child_stdin;
@@ -298,6 +322,12 @@ impl Channel for WhatsAppWebChannel {
         // Drop stdin sender - sidecar detects stdin close and exits gracefully
         self.stdin_tx.take();
 
+        // Clear shared sender handle so pending senders get an error
+        {
+            let mut shared = self.shared_stdin_tx.lock().await;
+            *shared = None;
+        }
+
         if let Some(mut child) = self.child.take() {
             // Wait with timeout, then force kill
             match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
@@ -314,37 +344,55 @@ impl Channel for WhatsAppWebChannel {
         Ok(())
     }
 
-    async fn send_message(&self, message: &Message) -> Result<()> {
-        let to = message
-            .metadata
-            .get("whatsapp_from")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                opencrust_common::Error::Channel("missing whatsapp_from in metadata".into())
-            })?;
-
-        let text = match &message.content {
-            MessageContent::Text(t) => t.clone(),
-            _ => {
-                return Err(opencrust_common::Error::Channel(
-                    "only text messages are supported for whatsapp-web send".into(),
-                ));
-            }
-        };
-
-        let cmd = serde_json::json!({
-            "type": "send",
-            "to": to,
-            "text": text,
-        });
-
-        self.send_command(&serde_json::to_string(&cmd).unwrap_or_default())
-            .await
-    }
-
     fn status(&self) -> ChannelStatus {
         self.status.clone()
     }
+}
+
+#[async_trait]
+impl ChannelSender for WhatsAppWebChannel {
+    fn channel_type(&self) -> &str {
+        "whatsapp-web"
+    }
+
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        let tx = self.stdin_tx.as_ref().ok_or_else(|| {
+            opencrust_common::Error::Channel("whatsapp-web sidecar not connected".into())
+        })?;
+        whatsapp_web_send_message(tx, message).await
+    }
+}
+
+/// Shared send logic used by both `WhatsAppWebChannel` and `WhatsAppWebSender`.
+async fn whatsapp_web_send_message(tx: &mpsc::Sender<String>, message: &Message) -> Result<()> {
+    let to = message
+        .metadata
+        .get("whatsapp_from")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            opencrust_common::Error::Channel("missing whatsapp_from in metadata".into())
+        })?;
+
+    let text = match &message.content {
+        MessageContent::Text(t) => t.clone(),
+        _ => {
+            return Err(opencrust_common::Error::Channel(
+                "only text messages are supported for whatsapp-web send".into(),
+            ));
+        }
+    };
+
+    let cmd = serde_json::json!({
+        "type": "send",
+        "to": to,
+        "text": text,
+    });
+
+    tx.send(serde_json::to_string(&cmd).unwrap_or_default())
+        .await
+        .map_err(|e| opencrust_common::Error::Channel(format!("failed to send to sidecar: {e}")))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -23,6 +23,9 @@ pub struct AppState {
     pub channels: ChannelRegistry,
     pub agents: AgentRuntime,
     pub sessions: DashMap<String, SessionState>,
+    /// Send-only handles for each active channel, keyed by channel type.
+    /// Populated during startup and used by the scheduler for outbound delivery.
+    pub channel_senders: DashMap<String, Arc<dyn opencrust_channels::ChannelSender>>,
     /// In-flight A2A tasks keyed by task ID.
     pub a2a_tasks: DashMap<String, opencrust_agents::a2a::A2ATask>,
     /// MCP server connection manager (legacy, for backward compat).
@@ -72,6 +75,7 @@ impl AppState {
             channels,
             agents,
             sessions: DashMap::new(),
+            channel_senders: DashMap::new(),
             a2a_tasks: DashMap::new(),
             mcp_manager: None,
             mcp_manager_arc: None,

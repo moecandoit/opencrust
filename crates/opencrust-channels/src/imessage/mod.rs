@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 
-use crate::traits::{Channel, ChannelStatus};
+use crate::traits::{ChannelLifecycle, ChannelSender, ChannelStatus};
 use opencrust_common::{Message, MessageContent, Result};
 
 /// Callback invoked when the bot receives a text message from iMessage.
@@ -50,14 +50,28 @@ impl IMessageChannel {
     }
 }
 
+/// Lightweight send-only handle for iMessage. Stateless (uses osascript).
+pub struct IMessageSender;
+
 #[async_trait]
-impl Channel for IMessageChannel {
+impl ChannelSender for IMessageSender {
     fn channel_type(&self) -> &str {
         "imessage"
     }
 
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        imessage_send_message(message).await
+    }
+}
+
+#[async_trait]
+impl ChannelLifecycle for IMessageChannel {
     fn display_name(&self) -> &str {
         "iMessage"
+    }
+
+    fn create_sender(&self) -> Box<dyn ChannelSender> {
+        Box::new(IMessageSender)
     }
 
     async fn connect(&mut self) -> Result<()> {
@@ -210,34 +224,46 @@ impl Channel for IMessageChannel {
         Ok(())
     }
 
-    async fn send_message(&self, message: &Message) -> Result<()> {
-        let to = message
-            .metadata
-            .get("imessage_sender")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                opencrust_common::Error::Channel("missing imessage_sender in metadata".into())
-            })?;
-
-        let text = match &message.content {
-            MessageContent::Text(t) => t.clone(),
-            _ => {
-                return Err(opencrust_common::Error::Channel(
-                    "only text messages are supported for imessage send".into(),
-                ));
-            }
-        };
-
-        sender::send_imessage(to, &text)
-            .await
-            .map_err(|e| opencrust_common::Error::Channel(format!("imessage send failed: {e}")))?;
-
-        Ok(())
-    }
-
     fn status(&self) -> ChannelStatus {
         self.status.clone()
     }
+}
+
+#[async_trait]
+impl ChannelSender for IMessageChannel {
+    fn channel_type(&self) -> &str {
+        "imessage"
+    }
+
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        imessage_send_message(message).await
+    }
+}
+
+/// Shared send logic used by both `IMessageChannel` and `IMessageSender`.
+async fn imessage_send_message(message: &Message) -> Result<()> {
+    let to = message
+        .metadata
+        .get("imessage_sender")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            opencrust_common::Error::Channel("missing imessage_sender in metadata".into())
+        })?;
+
+    let text = match &message.content {
+        MessageContent::Text(t) => t.clone(),
+        _ => {
+            return Err(opencrust_common::Error::Channel(
+                "only text messages are supported for imessage send".into(),
+            ));
+        }
+    };
+
+    sender::send_imessage(to, &text)
+        .await
+        .map_err(|e| opencrust_common::Error::Channel(format!("imessage send failed: {e}")))?;
+
+    Ok(())
 }
 
 #[cfg(test)]

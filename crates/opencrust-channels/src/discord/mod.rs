@@ -19,7 +19,7 @@ use serenity::all::{self as serenity_model, CreateAttachment, CreateMessage};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info};
 
-use crate::traits::{Channel, ChannelEvent, ChannelStatus};
+use crate::traits::{ChannelEvent, ChannelLifecycle, ChannelSender, ChannelStatus};
 use config::DiscordConfig;
 use handler::DiscordHandler;
 
@@ -162,14 +162,32 @@ impl DiscordChannel {
     }
 }
 
+/// Lightweight send-only handle for Discord. Holds a pre-built `Http` client.
+pub struct DiscordSender {
+    http: std::sync::Arc<serenity_model::Http>,
+}
+
 #[async_trait]
-impl Channel for DiscordChannel {
+impl ChannelSender for DiscordSender {
     fn channel_type(&self) -> &str {
         "discord"
     }
 
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        discord_send_message(&self.http, message).await
+    }
+}
+
+#[async_trait]
+impl ChannelLifecycle for DiscordChannel {
     fn display_name(&self) -> &str {
         "Discord"
+    }
+
+    fn create_sender(&self) -> Box<dyn ChannelSender> {
+        Box::new(DiscordSender {
+            http: std::sync::Arc::new(serenity_model::Http::new(&self.config.bot_token)),
+        })
     }
 
     async fn connect(&mut self) -> Result<()> {
@@ -243,40 +261,49 @@ impl Channel for DiscordChannel {
         Ok(())
     }
 
+    fn status(&self) -> ChannelStatus {
+        self.status.clone()
+    }
+}
+
+#[async_trait]
+impl ChannelSender for DiscordChannel {
+    fn channel_type(&self) -> &str {
+        "discord"
+    }
+
     async fn send_message(&self, message: &Message) -> Result<()> {
         let http = self
             .http
             .as_ref()
             .ok_or_else(|| Error::Channel("not connected to Discord".into()))?;
+        discord_send_message(http, message).await
+    }
+}
 
-        // Extract the target Discord channel ID from metadata
-        let discord_channel_id = message
-            .metadata
-            .get("discord_channel_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| s.parse::<u64>().ok())
-            .ok_or_else(|| {
-                Error::Channel("message metadata must contain 'discord_channel_id' to send".into())
-            })?;
+/// Shared send logic used by both `DiscordChannel` and `DiscordSender`.
+async fn discord_send_message(http: &serenity_model::Http, message: &Message) -> Result<()> {
+    let discord_channel_id = message
+        .metadata
+        .get("discord_channel_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+        .ok_or_else(|| {
+            Error::Channel("message metadata must contain 'discord_channel_id' to send".into())
+        })?;
 
-        let channel = serenity_model::ChannelId::new(discord_channel_id);
-        let text =
-            convert::to_discord_markdown(&convert::opencrust_content_to_text(&message.content));
-        let chunks = convert::split_discord_chunks(&text);
-        for chunk in chunks {
-            let builder = CreateMessage::new().content(chunk);
-            channel
-                .send_message(http.as_ref(), builder)
-                .await
-                .map_err(|e| Error::Channel(format!("failed to send message: {e}")))?;
-        }
-
-        Ok(())
+    let channel = serenity_model::ChannelId::new(discord_channel_id);
+    let text = convert::to_discord_markdown(&convert::opencrust_content_to_text(&message.content));
+    let chunks = convert::split_discord_chunks(&text);
+    for chunk in chunks {
+        let builder = CreateMessage::new().content(chunk);
+        channel
+            .send_message(http, builder)
+            .await
+            .map_err(|e| Error::Channel(format!("failed to send message: {e}")))?;
     }
 
-    fn status(&self) -> ChannelStatus {
-        self.status.clone()
-    }
+    Ok(())
 }
 
 #[cfg(test)]

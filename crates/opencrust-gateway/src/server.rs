@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use notify::{EventKind, RecursiveMode, Watcher};
-use opencrust_channels::Channel;
+use opencrust_channels::{ChannelLifecycle, ChannelSender};
 use opencrust_common::{
     ChannelId, Message, MessageContent, MessageDirection, Result, SessionId, UserId,
 };
@@ -115,6 +115,10 @@ impl GatewayServer {
         // Start configured Discord channels
         let discord_channels = build_discord_channels(&state.config, &state);
         for mut channel in discord_channels {
+            let sender: Arc<dyn ChannelSender> = Arc::from(channel.create_sender());
+            state
+                .channel_senders
+                .insert(sender.channel_type().to_string(), sender);
             tokio::spawn(async move {
                 if let Err(e) = channel.connect().await {
                     warn!("discord channel failed to connect: {e}");
@@ -140,6 +144,10 @@ impl GatewayServer {
         // Start configured Telegram channels
         let telegram_channels = build_telegram_channels(&state.config, &state);
         for mut channel in telegram_channels {
+            let sender: Arc<dyn ChannelSender> = Arc::from(channel.create_sender());
+            state
+                .channel_senders
+                .insert(sender.channel_type().to_string(), sender);
             tokio::spawn(async move {
                 if let Err(e) = channel.connect().await {
                     warn!("telegram channel failed to connect: {e}");
@@ -153,6 +161,10 @@ impl GatewayServer {
         // Start configured Slack channels
         let slack_channels = build_slack_channels(&state.config, &state);
         for mut channel in slack_channels {
+            let sender: Arc<dyn ChannelSender> = Arc::from(channel.create_sender());
+            state
+                .channel_senders
+                .insert(sender.channel_type().to_string(), sender);
             tokio::spawn(async move {
                 if let Err(e) = channel.connect().await {
                     warn!("slack channel failed to connect: {e}");
@@ -168,6 +180,10 @@ impl GatewayServer {
         {
             let imessage_channels = build_imessage_channels(&state.config, &state);
             for mut channel in imessage_channels {
+                let sender: Arc<dyn ChannelSender> = Arc::from(channel.create_sender());
+                state
+                    .channel_senders
+                    .insert(sender.channel_type().to_string(), sender);
                 tokio::spawn(async move {
                     if let Err(e) = channel.connect().await {
                         warn!("imessage channel failed to connect: {e}");
@@ -182,6 +198,10 @@ impl GatewayServer {
         // Build WhatsApp Business channels (webhook-driven - no persistent connection)
         let whatsapp_channels = build_whatsapp_channels(&state.config, &state);
         for channel in &whatsapp_channels {
+            let sender: Arc<dyn ChannelSender> = Arc::from(channel.create_sender());
+            state
+                .channel_senders
+                .insert(sender.channel_type().to_string(), sender);
             info!(
                 "whatsapp channel ready (webhook mode, phone_number_id={})",
                 channel.phone_number_id()
@@ -193,6 +213,10 @@ impl GatewayServer {
         // Start WhatsApp Web channels (sidecar-driven, QR code pairing)
         let whatsapp_web_channels = build_whatsapp_web_channels(&state.config, &state);
         for mut channel in whatsapp_web_channels {
+            let sender: Arc<dyn ChannelSender> = Arc::from(channel.create_sender());
+            state
+                .channel_senders
+                .insert(sender.channel_type().to_string(), sender);
             tokio::spawn(async move {
                 if let Err(e) = channel.connect().await {
                     warn!("whatsapp-web channel failed to connect: {e}");
@@ -437,14 +461,14 @@ async fn execute_scheduled_task(
         )?;
     }
 
-    // 4. Best-effort delivery to channel adapter.
-    if let Some(channel) = state.channels.get(channel_type.as_str()) {
-        if let Err(e) = channel.send_message(&response_msg).await {
+    // 4. Best-effort delivery to channel adapter via sender handle.
+    if let Some(sender) = state.channel_senders.get(channel_type.as_str()) {
+        if let Err(e) = sender.send_message(&response_msg).await {
             tracing::error!("Failed to send scheduled response: {e}");
         }
     } else {
         tracing::warn!(
-            "Scheduled response persisted but no channel adapter registered for: {}",
+            "Scheduled response persisted but no channel sender registered for: {}",
             channel_type
         );
     }

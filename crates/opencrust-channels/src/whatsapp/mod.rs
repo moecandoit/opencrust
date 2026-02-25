@@ -12,7 +12,7 @@ use reqwest::Client;
 use tokio::sync::mpsc;
 use tracing::info;
 
-use crate::traits::{Channel, ChannelStatus};
+use crate::traits::{ChannelLifecycle, ChannelSender, ChannelStatus};
 use opencrust_common::{Message, MessageContent, Result};
 
 /// Callback invoked when the bot receives a text message from WhatsApp.
@@ -96,18 +96,46 @@ impl WhatsAppChannel {
     }
 }
 
+/// Lightweight send-only handle for WhatsApp Business API.
+pub struct WhatsAppSender {
+    client: Client,
+    access_token: String,
+    phone_number_id: String,
+}
+
 #[async_trait]
-impl Channel for WhatsAppChannel {
+impl ChannelSender for WhatsAppSender {
     fn channel_type(&self) -> &str {
         "whatsapp"
     }
 
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        whatsapp_send_message(
+            &self.client,
+            &self.access_token,
+            &self.phone_number_id,
+            message,
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl ChannelLifecycle for WhatsAppChannel {
     fn display_name(&self) -> &str {
         &self.display
     }
 
+    fn create_sender(&self) -> Box<dyn ChannelSender> {
+        Box::new(WhatsAppSender {
+            client: Client::new(),
+            access_token: self.access_token.clone(),
+            phone_number_id: self.phone_number_id.clone(),
+        })
+    }
+
     async fn connect(&mut self) -> Result<()> {
-        // WhatsApp is webhook-driven — no persistent connection needed.
+        // WhatsApp is webhook-driven - no persistent connection needed.
         self.status = ChannelStatus::Connected;
         info!("whatsapp channel connected (webhook mode)");
         Ok(())
@@ -119,40 +147,57 @@ impl Channel for WhatsAppChannel {
         Ok(())
     }
 
-    async fn send_message(&self, message: &Message) -> Result<()> {
-        let to = message
-            .metadata
-            .get("whatsapp_from")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                opencrust_common::Error::Channel("missing whatsapp_from in metadata".into())
-            })?;
-
-        let text = match &message.content {
-            MessageContent::Text(t) => t.clone(),
-            _ => {
-                return Err(opencrust_common::Error::Channel(
-                    "only text messages are supported for whatsapp send".into(),
-                ));
-            }
-        };
-
-        api::send_text_message(
-            &self.client,
-            &self.access_token,
-            &self.phone_number_id,
-            to,
-            &text,
-        )
-        .await
-        .map_err(|e| opencrust_common::Error::Channel(format!("whatsapp send failed: {e}")))?;
-
-        Ok(())
-    }
-
     fn status(&self) -> ChannelStatus {
         self.status.clone()
     }
+}
+
+#[async_trait]
+impl ChannelSender for WhatsAppChannel {
+    fn channel_type(&self) -> &str {
+        "whatsapp"
+    }
+
+    async fn send_message(&self, message: &Message) -> Result<()> {
+        whatsapp_send_message(
+            &self.client,
+            &self.access_token,
+            &self.phone_number_id,
+            message,
+        )
+        .await
+    }
+}
+
+/// Shared send logic used by both `WhatsAppChannel` and `WhatsAppSender`.
+async fn whatsapp_send_message(
+    client: &Client,
+    access_token: &str,
+    phone_number_id: &str,
+    message: &Message,
+) -> Result<()> {
+    let to = message
+        .metadata
+        .get("whatsapp_from")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            opencrust_common::Error::Channel("missing whatsapp_from in metadata".into())
+        })?;
+
+    let text = match &message.content {
+        MessageContent::Text(t) => t.clone(),
+        _ => {
+            return Err(opencrust_common::Error::Channel(
+                "only text messages are supported for whatsapp send".into(),
+            ));
+        }
+    };
+
+    api::send_text_message(client, access_token, phone_number_id, to, &text)
+        .await
+        .map_err(|e| opencrust_common::Error::Channel(format!("whatsapp send failed: {e}")))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
