@@ -12,6 +12,54 @@ For every provider, API keys are resolved in this order:
 2. **Config file** - `api_key` field under the `llm:` section in `config.yml`
 3. **Environment variable** - provider-specific env var (listed below)
 
+## Custom Base URL
+
+All providers support custom base URLs via the `base_url` configuration field. This is useful for:
+
+- **Proxies and gateways** - Route requests through a custom endpoint
+- **Self-hosted models** - Point to your own API server
+- **Regional endpoints** - Use region-specific API URLs
+- **Development/testing** - Connect to local or staging environments
+
+### Configuration
+
+Add the `base_url` field to any provider configuration:
+
+```yaml
+llm:
+  custom-openai:
+    provider: openai
+    model: gpt-4o
+    base_url: "https://my-proxy.example.com/v1"
+    api_key: sk-...
+  
+  remote-ollama:
+    provider: ollama
+    model: llama3.1
+    base_url: "http://192.168.1.100:11434"
+  
+  custom-anthropic:
+    provider: anthropic
+    model: claude-sonnet-4-5-20250929
+    base_url: "https://my-anthropic-proxy.com"
+    api_key: sk-ant-...
+```
+
+### URL Format
+
+- URLs should include the protocol (`http://` or `https://`)
+- Trailing slashes are automatically handled
+- For OpenAI-compatible providers, the `/v1/chat/completions` path is appended automatically
+- For Anthropic, the `/v1/messages` path is appended automatically
+- For Ollama, the `/api/chat` path is appended automatically
+
+### Validation
+
+The setup wizard validates base URLs to ensure they:
+- Use valid HTTP/HTTPS protocols
+- Have proper URL format
+- Are not empty or malformed
+
 ## Native Providers
 
 ### Anthropic Claude

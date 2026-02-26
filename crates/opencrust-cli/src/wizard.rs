@@ -189,6 +189,23 @@ async fn validate_slack_token(token: &str) -> Result<String> {
     Ok(team)
 }
 
+/// Validate a base URL format.
+fn validate_base_url(url: &str) -> Result<()> {
+    if url.is_empty() {
+        return Ok(());
+    }
+
+    // Check protocol
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        anyhow::bail!("URL must start with http:// or https://");
+    }
+
+    // Try to parse as URL
+    reqwest::Url::parse(url).context("invalid URL format")?;
+
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -226,6 +243,7 @@ fn mask_token(s: &str) -> String {
 struct ProviderResult {
     provider: String,
     api_key: String,
+    base_url: Option<String>,
     from_env: bool,
     verified: bool,
 }
@@ -307,6 +325,7 @@ async fn section_provider(
                     return Ok(Some(ProviderResult {
                         provider: provider.to_string(),
                         api_key: key.to_string(),
+                        base_url: None,
                         from_env: true,
                         verified: true,
                     }));
@@ -340,13 +359,44 @@ async fn section_provider(
     let provider = providers[selection];
     let env_hint = env_var_for_provider(provider);
 
+    // Base URL (optional)
+    let existing_base_url = existing
+        .as_ref()
+        .and_then(|c| c.llm.get("main"))
+        .and_then(|p| p.base_url.as_ref())
+        .map(|s| s.as_str());
+
+    let base_url_prompt = if let Some(existing) = existing_base_url {
+        format!("Custom base URL (optional, Enter to keep: {})", existing)
+    } else {
+        "Custom base URL (optional, Enter to skip)".to_string()
+    };
+
+    let base_url: String = Input::new()
+        .with_prompt(&base_url_prompt)
+        .allow_empty(true)
+        .validate_with(|input: &String| -> Result<(), String> {
+            if input.is_empty() {
+                return Ok(());
+            }
+            validate_base_url(input).map_err(|e| e.to_string())
+        })
+        .interact_text()
+        .context("base URL input cancelled")?;
+
+    let base_url = if base_url.trim().is_empty() {
+        existing_base_url.map(|s| s.to_string())
+    } else {
+        Some(base_url.trim().to_string())
+    };
+
+    if let Some(ref url) = base_url {
+        println!("  Using custom base URL: {}", url);
+    }
+
     // API key entry with retry loop
     loop {
-        let key_prompt = if existing_has_key {
-            format!("{provider} API key (Enter to keep existing, or set {env_hint} env var later)")
-        } else {
-            format!("{provider} API key (or set {env_hint} env var later)")
-        };
+        let key_prompt = format!("{provider} API key (or set {env_hint} env var later)");
 
         let api_key: String = Password::new()
             .with_prompt(&key_prompt)
@@ -366,6 +416,7 @@ async fn section_provider(
             return Ok(Some(ProviderResult {
                 provider: provider.to_string(),
                 api_key: old_key,
+                base_url: base_url.clone(),
                 from_env: false,
                 verified: false,
             }));
@@ -377,6 +428,7 @@ async fn section_provider(
             return Ok(Some(ProviderResult {
                 provider: provider.to_string(),
                 api_key: String::new(),
+                base_url,
                 from_env: true,
                 verified: false,
             }));
@@ -390,6 +442,7 @@ async fn section_provider(
                 return Ok(Some(ProviderResult {
                     provider: provider.to_string(),
                     api_key,
+                    base_url: base_url.clone(),
                     from_env: false,
                     verified: true,
                 }));
@@ -405,6 +458,7 @@ async fn section_provider(
                     return Ok(Some(ProviderResult {
                         provider: provider.to_string(),
                         api_key,
+                        base_url: base_url.clone(),
                         from_env: false,
                         verified: false,
                     }));
@@ -421,6 +475,7 @@ async fn section_provider(
                     return Ok(Some(ProviderResult {
                         provider: provider.to_string(),
                         api_key,
+                        base_url: base_url.clone(),
                         from_env: false,
                         verified: false,
                     }));
@@ -1026,7 +1081,7 @@ pub async fn run_wizard(config_dir: &Path) -> Result<()> {
             provider: pr.provider.clone(),
             model: None,
             api_key: None,
-            base_url: None,
+            base_url: pr.base_url.clone(),
             extra: Default::default(),
         };
 
@@ -1132,4 +1187,44 @@ pub async fn run_wizard(config_dir: &Path) -> Result<()> {
     println!();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_base_url_empty() {
+        assert!(validate_base_url("").is_ok());
+    }
+
+    #[test]
+    fn test_validate_base_url_https() {
+        assert!(validate_base_url("https://api.openai.com/v1").is_ok());
+    }
+
+    #[test]
+    fn test_validate_base_url_http() {
+        assert!(validate_base_url("http://localhost:8080").is_ok());
+    }
+
+    #[test]
+    fn test_validate_base_url_no_protocol() {
+        let result = validate_base_url("api.openai.com");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must start with"));
+    }
+
+    #[test]
+    fn test_validate_base_url_wrong_protocol() {
+        let result = validate_base_url("ftp://example.com");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must start with"));
+    }
+
+    #[test]
+    fn test_validate_base_url_invalid_format() {
+        let result = validate_base_url("https://invalid url with spaces");
+        assert!(result.is_err());
+    }
 }
