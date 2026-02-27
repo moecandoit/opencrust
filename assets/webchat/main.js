@@ -1,4 +1,4 @@
-import { initIntegrationsView } from "/assets/webchat/integrations/main.js";
+import { initIntegrationsView } from '/assets/webchat/integrations/main.js';
 
 const chatEl = document.getElementById("chat");
 const inputEl = document.getElementById("input");
@@ -61,10 +61,7 @@ try {
 }
 
 function saveProviderModels() {
-  localStorage.setItem(
-    providerModelStorage,
-    JSON.stringify(selectedModelsByProvider),
-  );
+  localStorage.setItem(providerModelStorage, JSON.stringify(selectedModelsByProvider));
 }
 
 function setSavedModelForProvider(providerId, model) {
@@ -87,8 +84,7 @@ function setTheme(theme, persist = true) {
   const selected = theme === "dark" ? "dark" : "light";
   document.documentElement.setAttribute("data-theme", selected);
   if (themeToggleBtn) {
-    themeToggleBtn.textContent =
-      selected === "dark" ? "Light Mode" : "Dark Mode";
+    themeToggleBtn.textContent = selected === "dark" ? "Light Mode" : "Dark Mode";
   }
   if (persist) {
     localStorage.setItem(themeStorageKey, selected);
@@ -101,9 +97,7 @@ function initTheme() {
     setTheme(stored, false);
     return;
   }
-  const prefersDark =
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   setTheme(prefersDark ? "dark" : "light");
 }
 
@@ -191,10 +185,7 @@ function renderInlineMarkdown(input) {
   text = text.replace(/_([^_]+)_/g, "<em>$1</em>");
   text = text.replace(/~~([^~]+)~~/g, "<del>$1</del>");
 
-  return text.replace(
-    /\u0000(\d+)\u0000/g,
-    (_, idx) => replacements[Number(idx)] || "",
-  );
+  return text.replace(/\u0000(\d+)\u0000/g, (_, idx) => replacements[Number(idx)] || "");
 }
 
 function renderMarkdown(text) {
@@ -202,18 +193,13 @@ function renderMarkdown(text) {
   if (!normalized.trim()) return "";
 
   const codeBlocks = [];
-  const withCodeTokens = normalized.replace(
-    /```([\w-]+)?\n([\s\S]*?)```/g,
-    (_, lang = "", code) => {
-      const language = String(lang).trim();
-      const classAttr = language
-        ? ` class="language-${escapeHtml(language)}"`
-        : "";
-      const codeHtml = `<pre><code${classAttr}>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`;
-      const idx = codeBlocks.push(codeHtml) - 1;
-      return `@@CODEBLOCK_${idx}@@`;
-    },
-  );
+  const withCodeTokens = normalized.replace(/```([\w-]+)?\n([\s\S]*?)```/g, (_, lang = "", code) => {
+    const language = String(lang).trim();
+    const classAttr = language ? ` class="language-${escapeHtml(language)}"` : "";
+    const codeHtml = `<pre><code${classAttr}>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`;
+    const idx = codeBlocks.push(codeHtml) - 1;
+    return `@@CODEBLOCK_${idx}@@`;
+  });
 
   const parseTableCells = (line) => {
     const raw = String(line || "").trim();
@@ -257,10 +243,7 @@ function renderMarkdown(text) {
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    const body = renderInlineMarkdown(paragraph.join("\n")).replace(
-      /\n/g,
-      "<br>",
-    );
+    const body = renderInlineMarkdown(paragraph.join("\n")).replace(/\n/g, "<br>");
     chunks.push(`<p>${body}</p>`);
     paragraph.length = 0;
   };
@@ -289,17 +272,13 @@ function renderMarkdown(text) {
       flushParagraph();
       closeList();
       const level = headingMatch[1].length;
-      chunks.push(
-        `<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`,
-      );
+      chunks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
       continue;
     }
     if (quoteMatch) {
       flushParagraph();
       closeList();
-      chunks.push(
-        `<blockquote>${renderInlineMarkdown(quoteMatch[1])}</blockquote>`,
-      );
+      chunks.push(`<blockquote>${renderInlineMarkdown(quoteMatch[1])}</blockquote>`);
       continue;
     }
     if (listMatch) {
@@ -311,11 +290,7 @@ function renderMarkdown(text) {
       chunks.push(`<li>${renderInlineMarkdown(listMatch[1])}</li>`);
       continue;
     }
-    if (
-      headerCells &&
-      i + 1 < lines.length &&
-      isTableDelimiterRow(lines[i + 1])
-    ) {
+    if (headerCells && i + 1 < lines.length && isTableDelimiterRow(lines[i + 1])) {
       flushParagraph();
       closeList();
 
@@ -345,9 +320,7 @@ function renderMarkdown(text) {
       const tbody = bodyRows.length
         ? `<tbody>${bodyRows.map((cells) => `<tr>${renderRow(cells, "td")}</tr>`).join("")}</tbody>`
         : "";
-      chunks.push(
-        `<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`,
-      );
+      chunks.push(`<div class="md-table-wrap"><table>${thead}${tbody}</table></div>`);
       i = rowIdx - 1;
       continue;
     }
@@ -379,10 +352,9 @@ function appendMessage(kind, text) {
   div.className = `msg ${kind}`;
   setMessageContent(div, kind, text);
   const thinkingWidget = document.getElementById("nano-agents");
-  const widgetVisible =
-    thinkingWidget &&
-    thinkingWidget.parentElement === chatEl &&
-    thinkingWidget.style.display !== "none";
+  const widgetVisible = thinkingWidget
+    && thinkingWidget.parentElement === chatEl
+    && thinkingWidget.style.display !== "none";
 
   if (widgetVisible) {
     chatEl.insertBefore(div, thinkingWidget);
@@ -484,7 +456,8 @@ async function refreshStatus() {
     if (j.latest_version && j.version) {
       const dismissed = sessionStorage.getItem("opencrust.update_dismissed");
       if (dismissed !== j.latest_version) {
-        updateBannerText.textContent = `Update available: v${j.version} \u2192 v${j.latest_version.replace(/^v/, "")} - run opencrust update`;
+        updateBannerText.textContent =
+          `Update available: v${j.version} \u2192 v${j.latest_version.replace(/^v/, "")} - run opencrust update`;
         updateBanner.style.display = "";
       }
     } else {
@@ -531,17 +504,14 @@ async function loadProviders() {
     for (const p of providerData) {
       const opt = document.createElement("option");
       opt.value = p.id;
-      opt.textContent = p.active
-        ? p.display_name
-        : `${p.display_name} (not configured)`;
+      opt.textContent = p.active ? p.display_name : `${p.display_name} (not configured)`;
       providerSelect.appendChild(opt);
     }
 
     // Restore saved selection, or pick the default
-    const defaultProvider = providerData.find((p) => p.is_default);
-    const saved =
-      selectedProvider || (defaultProvider ? defaultProvider.id : "");
-    if (saved && [...providerSelect.options].some((o) => o.value === saved)) {
+    const defaultProvider = providerData.find(p => p.is_default);
+    const saved = selectedProvider || (defaultProvider ? defaultProvider.id : "");
+    if (saved && [...providerSelect.options].some(o => o.value === saved)) {
       providerSelect.value = saved;
     }
     updateProviderUI();
@@ -567,9 +537,7 @@ function updateModelUI(provider) {
   }
 
   const models = Array.isArray(provider.models)
-    ? provider.models.filter(
-        (m) => typeof m === "string" && m.trim().length > 0,
-      )
+    ? provider.models.filter(m => typeof m === "string" && m.trim().length > 0)
     : [];
   for (const modelName of models) {
     const opt = document.createElement("option");
@@ -591,14 +559,13 @@ function updateModelUI(provider) {
   } else if (models.length > 0) {
     providerModelStatus.textContent = `${models.length} model${models.length === 1 ? "" : "s"} available`;
   } else {
-    providerModelStatus.textContent =
-      "No model list available; type a model name to override.";
+    providerModelStatus.textContent = "No model list available; type a model name to override.";
   }
 }
 
 function updateProviderUI() {
   const id = providerSelect.value;
-  const p = providerData.find((x) => x.id === id);
+  const p = providerData.find(x => x.id === id);
   if (!p) {
     providerStatus.textContent = "";
     providerKeySection.style.display = "none";
@@ -621,7 +588,7 @@ function updateProviderUI() {
 providerSelect.addEventListener("change", () => {
   updateProviderUI();
   // If switching to an active provider, tell the backend to use it as default
-  const p = providerData.find((x) => x.id === providerSelect.value);
+  const p = providerData.find(x => x.id === providerSelect.value);
   if (p && p.active) {
     fetch("/api/providers", {
       method: "POST",
@@ -705,39 +672,23 @@ function handleServerEvent(raw) {
       refreshStatus();
       break;
     case "resumed":
-      appendMessage(
-        "sys",
-        `Session resumed (${evt.history_length ?? 0} messages in history).`,
-      );
+      appendMessage("sys", `Session resumed (${evt.history_length ?? 0} messages in history).`);
       refreshStatus();
       break;
     case "message":
-      appendOrUpdateStreamMessage(
-        "assistant",
-        evt.content || "(empty response)",
-      );
+      appendOrUpdateStreamMessage("assistant", evt.content || "(empty response)");
       break;
     case "error":
       setAgentThinking(false);
-      appendMessage(
-        "error",
-        `${evt.code || "error"}: ${evt.message || "unknown error"}`,
-      );
+      appendMessage("error", `${evt.code || "error"}: ${evt.message || "unknown error"}`);
       break;
     default:
-      appendMessage(
-        "sys",
-        `Event ${evt.type || "unknown"}: ${JSON.stringify(evt)}`,
-      );
+      appendMessage("sys", `Event ${evt.type || "unknown"}: ${JSON.stringify(evt)}`);
   }
 }
 
 function connect() {
-  if (
-    socket &&
-    (socket.readyState === WebSocket.OPEN ||
-      socket.readyState === WebSocket.CONNECTING)
-  ) {
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
 
@@ -773,9 +724,7 @@ function reconnectFresh() {
   }
   if (socket) {
     socket.onclose = null;
-    try {
-      socket.close();
-    } catch {}
+    try { socket.close(); } catch { }
     socket = null;
   }
   setConnectionState(false);
@@ -840,10 +789,10 @@ authConnectBtn.addEventListener("click", () => {
   reconnectFresh();
 });
 
+
 if (themeToggleBtn) {
   themeToggleBtn.addEventListener("click", () => {
-    const current =
-      document.documentElement.getAttribute("data-theme") || "light";
+    const current = document.documentElement.getAttribute("data-theme") || "light";
     setTheme(current === "dark" ? "light" : "dark");
   });
 }
@@ -852,13 +801,13 @@ if (themeToggleBtn) {
 const navItems = {
   chat: document.getElementById("nav-chat"),
   mcps: document.getElementById("nav-mcps"),
-  integrations: document.getElementById("nav-integrations"),
+  integrations: document.getElementById("nav-integrations")
 };
 
 const views = {
   chat: document.getElementById("view-chat"),
   mcps: document.getElementById("view-mcps"),
-  integrations: document.getElementById("view-integrations"),
+  integrations: document.getElementById("view-integrations")
 };
 
 function switchView(viewId) {
@@ -894,26 +843,22 @@ async function loadMcpServers() {
     const data = await resp.json();
     const servers = data.servers || [];
     if (servers.length === 0) {
-      list.innerHTML =
-        '<p style="color:var(--text-secondary)">No MCP servers configured. Add servers to config.yml.</p>';
+      list.innerHTML = '<p style="color:var(--text-secondary)">No MCP servers configured. Add servers to config.yml.</p>';
       return;
     }
-    list.innerHTML = servers
-      .map((s) => {
-        const statusClass = s.connected ? "online" : "offline";
-        const statusText = s.connected ? "Connected" : "Disconnected";
-        return `<div class="card">
+    list.innerHTML = servers.map(s => {
+      const statusClass = s.connected ? "online" : "offline";
+      const statusText = s.connected ? "Connected" : "Disconnected";
+      return `<div class="card">
         <div class="card-header">
           <h3 class="card-title">${s.name}</h3>
           <span class="pill ${statusClass}">${statusText}</span>
         </div>
         <div class="card-meta">${s.tools} tool${s.tools !== 1 ? "s" : ""} registered</div>
       </div>`;
-      })
-      .join("");
+    }).join("");
   } catch (e) {
-    list.innerHTML =
-      '<p style="color:var(--text-secondary)">Failed to load MCP servers.</p>';
+    list.innerHTML = '<p style="color:var(--text-secondary)">Failed to load MCP servers.</p>';
   }
 }
 navItems.integrations.addEventListener("click", async () => {
@@ -950,10 +895,7 @@ async function boot() {
       // Have a saved key — try connecting with it
       connect();
     } else {
-      appendMessage(
-        "sys",
-        "This gateway requires an API key. Enter it in the sidebar.",
-      );
+      appendMessage("sys", "This gateway requires an API key. Enter it in the sidebar.");
     }
   } else {
     authSection.style.display = "none";
@@ -968,12 +910,7 @@ function initNanoAgents() {
   if (!bg || !grid) return;
   if (widget) widget.style.display = "none";
 
-  const colors = [
-    "var(--brand)",
-    "var(--brand-2)",
-    "var(--online)",
-    "var(--accent-line)",
-  ];
+  const colors = ["var(--brand)", "var(--brand-2)", "var(--online)", "var(--accent-line)"];
   const bits = [];
   for (let i = 0; i < 6; i++) {
     const bit = document.createElement("div");
@@ -983,8 +920,7 @@ function initNanoAgents() {
     bit.style.height = `${size}px`;
     bit.style.left = `${Math.random() * 100}%`;
     bit.style.top = `${Math.random() * 100}%`;
-    bit.style.backgroundColor =
-      colors[Math.floor(Math.random() * colors.length)];
+    bit.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
     bit.style.opacity = "0";
     bg.appendChild(bit);
     bits.push({ el: bit, id: Math.random() });
@@ -997,9 +933,7 @@ function initNanoAgents() {
         b.el.style.top = `${Math.random() * 100}%`;
         b.el.style.opacity = "0";
       } else {
-        b.el.style.opacity = String(
-          Math.sin(Date.now() / 1500 + b.id * 10) * 0.1 + 0.1,
-        );
+        b.el.style.opacity = String(Math.sin(Date.now() / 1500 + b.id * 10) * 0.1 + 0.1);
       }
     });
   }, 250);
@@ -1008,7 +942,7 @@ function initNanoAgents() {
     ["var(--brand)", "var(--brand-2)"],
     ["var(--online)", "#4ade80"],
     ["var(--warn-text)", "var(--warn-edge)"],
-    ["var(--ink-soft)", "var(--ink)"],
+    ["var(--ink-soft)", "var(--ink)"]
   ];
 
   const agentEls = [];
@@ -1030,8 +964,7 @@ function initNanoAgents() {
     agentEls.forEach((a) => {
       const pixels = a.el.children;
       for (let i = 0; i < pixels.length; i++) {
-        pixels[i].style.backgroundColor =
-          a.colors[Math.floor(Math.random() * a.colors.length)];
+        pixels[i].style.backgroundColor = a.colors[Math.floor(Math.random() * a.colors.length)];
         pixels[i].style.opacity = String(0.7 + Math.random() * 0.3);
       }
     });

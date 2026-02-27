@@ -1,463 +1,252 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>OpenCrust Chat</title>
-        <link
-            rel="stylesheet"
-            href="/assets/webchat/styles.css?v=oauth-rules-4"
-        />
-        <link
-            rel="stylesheet"
-            href="/assets/webchat/integrations/styles.css?v=1"
-        />
-    </head>
 
-    <body>
-        <main class="shell">
-            <!-- Left Sidebar for Navigation -->
-            <aside class="left-sidebar">
-                <div class="brand">
-                    <div class="badge"></div>
-                    <div>
-                        <h1 class="title">OpenCrust</h1>
-                        <p class="subtitle">Your personal AI assistant</p>
-                    </div>
-                </div>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCrust Chat</title>
+  <link rel="stylesheet" href="/assets/webchat/styles.css?v=oauth-rules-4">
+  <link rel="stylesheet" href="/assets/webchat/integrations/styles.css?v=1">
+</head>
 
-                <div class="nav-item active" id="nav-chat">
-                    <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path
-                            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-                        ></path>
-                    </svg>
-                    Chat
-                </div>
+<body>
+  <main class="shell">
+    <!-- Left Sidebar for Navigation -->
+    <aside class="left-sidebar">
+      <div class="brand">
+        <div class="badge"></div>
+        <div>
+          <h1 class="title">OpenCrust</h1>
+          <p class="subtitle">Your personal AI assistant</p>
+        </div>
+      </div>
 
-                <div class="nav-item" id="nav-mcps">
-                    <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <rect
-                            x="2"
-                            y="3"
-                            width="20"
-                            height="14"
-                            rx="2"
-                            ry="2"
-                        ></rect>
-                        <line x1="8" y1="21" x2="16" y2="21"></line>
-                        <line x1="12" y1="17" x2="12" y2="21"></line>
-                    </svg>
-                    MCPs Settings
-                </div>
+      <div class="nav-item active" id="nav-chat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        Chat
+      </div>
 
-                <div class="nav-item" id="nav-integrations">
-                    <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    >
-                        <path
-                            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
-                        ></path>
-                        <polyline
-                            points="7.5 4.21 12 6.81 16.5 4.21"
-                        ></polyline>
-                        <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
-                        <polyline
-                            points="21 12 16.5 14.6 16.5 19.79"
-                        ></polyline>
-                        <polyline
-                            points="3.27 6.96 12 12.01 20.73 6.96"
-                        ></polyline>
-                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                    </svg>
-                    Integrations
-                </div>
-            </aside>
+      <div class="nav-item" id="nav-mcps">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+          <line x1="8" y1="21" x2="16" y2="21"></line>
+          <line x1="12" y1="17" x2="12" y2="21"></line>
+        </svg>
+        MCPs Settings
+      </div>
 
-            <div class="main-wrapper">
-                <header class="topbar">
-                    <div class="topbar-actions">
-                        <button
-                            id="theme-toggle"
-                            class="theme-toggle"
-                            type="button"
-                        >
-                            Dark Mode
-                        </button>
-                        <div class="pill" id="conn-pill">
-                            <span class="offline">Disconnected</span>
-                        </div>
-                    </div>
-                </header>
+      <div class="nav-item" id="nav-integrations">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path
+            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+          </path>
+          <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+          <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+          <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+          <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+          <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+        Integrations
+      </div>
+    </aside>
 
-                <div
-                    id="update-banner"
-                    class="update-banner"
-                    style="display: none"
-                >
-                    <span id="update-banner-text"></span>
-                    <button
-                        class="update-banner-close"
-                        id="update-banner-close"
-                        title="Dismiss"
-                    >
-                        &times;
-                    </button>
-                </div>
+    <div class="main-wrapper">
+      <header class="topbar">
+        <div class="topbar-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button">Dark Mode</button>
+          <div class="pill" id="conn-pill"><span class="offline">Disconnected</span></div>
+        </div>
+      </header>
 
-                <div class="workspace">
-                    <section class="panel panel-view" id="view-chat">
-                        <div class="chat-top">
-                            <div class="chat-meta">
-                                <span>Chat</span>
-                                <span>Enter sends, Shift+Enter newline</span>
-                            </div>
-                            <div class="actions">
-                                <button id="reconnect">Reconnect</button>
-                                <button id="clear">New Chat</button>
-                            </div>
-                        </div>
+      <div id="update-banner" class="update-banner" style="display:none">
+        <span id="update-banner-text"></span>
+        <button class="update-banner-close" id="update-banner-close" title="Dismiss">&times;</button>
+      </div>
 
-                        <div id="chat" class="chat">
-                            <div
-                                id="nano-agents"
-                                class="nano-agents"
-                                aria-live="polite"
-                            >
-                                <div class="nano-bg" id="nano-bg"></div>
-                                <div class="nano-grid" id="nano-grid"></div>
-                                <div class="nano-text">
-                                    <span class="nano-label">Typing...</span>
-                                    <span id="nano-time" class="nano-time"
-                                        >0s</span
-                                    >
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="controls">
-                            <div class="composer">
-                                <textarea
-                                    id="input"
-                                    placeholder="Type a message..."
-                                ></textarea>
-                                <button id="send" class="primary">Send</button>
-                            </div>
-                        </div>
-                    </section>
-
-                    <!-- MCPs View — populated from GET /api/mcp -->
-                    <section
-                        class="panel panel-view"
-                        id="view-mcps"
-                        style="display: none"
-                    >
-                        <div class="settings-header">
-                            <h2>MCPs</h2>
-                        </div>
-                        <div class="settings-body" id="mcps-list">
-                            <p style="color: var(--text-secondary)">
-                                Loading...
-                            </p>
-                        </div>
-                    </section>
-
-                    <!-- Structural Mockup for Integrations View -->
-                    <section
-                        class="panel panel-view"
-                        id="view-integrations"
-                        style="display: none"
-                    >
-                        <div class="settings-header">
-                            <h2>Integrations</h2>
-                        </div>
-                        <div class="settings-body" id="integrations-list">
-                            <div class="card integration-card">
-                                <div class="card-header">
-                                    <div class="integration-brand">
-                                        <img
-                                            class="integration-logo"
-                                            src="/assets/googlenormal.svg"
-                                            alt="Google logo"
-                                        />
-                                        <h3 class="card-title">Google OAuth</h3>
-                                    </div>
-                                    <span
-                                        class="pill offline"
-                                        id="google-integration-status"
-                                        >Not connected</span
-                                    >
-                                </div>
-                                <div
-                                    class="card-meta"
-                                    id="google-integration-meta"
-                                >
-                                    Connect your Google Workspace account.
-                                </div>
-                                <div
-                                    class="integration-config"
-                                    id="google-integration-config"
-                                    style="display: none"
-                                >
-                                    <label for="google-client-id-input"
-                                        >Google Client ID</label
-                                    >
-                                    <input
-                                        id="google-client-id-input"
-                                        type="text"
-                                        autocomplete="off"
-                                        placeholder="Paste OAuth client ID"
-                                    />
-                                    <label for="google-client-secret-input"
-                                        >Google Client Secret</label
-                                    >
-                                    <input
-                                        id="google-client-secret-input"
-                                        type="password"
-                                        autocomplete="off"
-                                        placeholder="Paste OAuth client secret"
-                                    />
-                                    <label for="google-redirect-uri-input"
-                                        >Redirect URI (optional)</label
-                                    >
-                                    <input
-                                        id="google-redirect-uri-input"
-                                        type="text"
-                                        autocomplete="off"
-                                        placeholder="http://127.0.0.1:3000/api/integrations/google/callback"
-                                    />
-                                    <button id="google-integration-save">
-                                        Save OAuth Config
-                                    </button>
-                                    <div
-                                        id="google-integration-feedback"
-                                        class="integration-feedback"
-                                        aria-live="polite"
-                                    ></div>
-                                    <div
-                                        id="google-vault-status"
-                                        class="integration-note"
-                                        aria-live="polite"
-                                    ></div>
-                                </div>
-                                <div class="card-actions">
-                                    <button id="google-config-toggle">
-                                        Configure
-                                    </button>
-                                    <button
-                                        class="primary"
-                                        id="google-integration-toggle"
-                                    >
-                                        Connect
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="card integration-card is-placeholder">
-                                <div class="card-header">
-                                    <div class="integration-brand">
-                                        <h3 class="card-title">Slack</h3>
-                                    </div>
-                                    <span class="pill offline"
-                                        >Coming Soon</span
-                                    >
-                                </div>
-                                <div class="card-meta">
-                                    Connect your agent to Slack channels for
-                                    real-time collaboration and team
-                                    intelligence.
-                                </div>
-                            </div>
-
-                            <div class="card integration-card is-placeholder">
-                                <div class="card-header">
-                                    <div class="integration-brand">
-                                        <h3 class="card-title">Discord</h3>
-                                    </div>
-                                    <span class="pill offline"
-                                        >Coming Soon</span
-                                    >
-                                </div>
-                                <div class="card-meta">
-                                    Enable your agent to interact within Discord
-                                    servers, manage roles, and answer community
-                                    questions.
-                                </div>
-                            </div>
-
-                            <div class="card integration-card is-placeholder">
-                                <div class="card-header">
-                                    <div class="integration-brand">
-                                        <h3 class="card-title">Telegram</h3>
-                                    </div>
-                                    <span class="pill offline"
-                                        >Coming Soon</span
-                                    >
-                                </div>
-                                <div class="card-meta">
-                                    Communicate with your agent on the go via
-                                    Telegram for seamless mobile integration.
-                                </div>
-                            </div>
-                        </div>
-                    </section>
-                    <aside class="panel">
-                        <div class="panel-head">
-                            <img
-                                class="panel-art"
-                                src="/assets/UI%20Crab.png"
-                                alt="OpenCrust UI crab"
-                            />
-                            <h2>System Status</h2>
-                        </div>
-                        <div class="sidebar-body">
-                            <div class="status-group">
-                                <h3>Gateway</h3>
-                                <div class="status-row">
-                                    <span>Server</span>
-                                    <code id="api-status">checking...</code>
-                                </div>
-                                <div class="status-row">
-                                    <span>Session</span>
-                                    <code id="session">none</code>
-                                </div>
-                                <div class="status-row">
-                                    <span>Active sessions</span>
-                                    <code id="session-count">-</code>
-                                </div>
-                            </div>
-
-                            <hr class="divider" />
-
-                            <div class="status-group">
-                                <h3>Channels</h3>
-                                <div id="channel-list" class="channel-list">
-                                    <span class="no-channels"
-                                        >No channels connected</span
-                                    >
-                                </div>
-                            </div>
-
-                            <hr class="divider" />
-
-                            <div class="status-group">
-                                <h3>LLM Provider</h3>
-                                <select
-                                    id="provider-select"
-                                    class="provider-select"
-                                >
-                                    <option value="">Loading...</option>
-                                </select>
-                                <div
-                                    id="provider-status"
-                                    class="provider-status"
-                                ></div>
-                                <label
-                                    for="provider-model-input"
-                                    class="provider-model-label"
-                                    >Model (optional)</label
-                                >
-                                <input
-                                    id="provider-model-input"
-                                    class="provider-model-input"
-                                    list="provider-model-options"
-                                    placeholder="Provider default model"
-                                    autocomplete="off"
-                                />
-                                <datalist
-                                    id="provider-model-options"
-                                ></datalist>
-                                <div
-                                    id="provider-model-status"
-                                    class="provider-model-status"
-                                ></div>
-                                <label
-                                    for="provider-base-url-input"
-                                    class="provider-base-url-label"
-                                    >Base URL (optional)</label
-                                >
-                                <input
-                                    id="provider-base-url-input"
-                                    class="provider-base-url-input"
-                                    type="text"
-                                    placeholder="e.g., https://api.openai.com/v1"
-                                    autocomplete="off"
-                                />
-                                <div
-                                    id="provider-key-section"
-                                    style="display: none"
-                                >
-                                    <input
-                                        id="provider-api-key"
-                                        type="password"
-                                        placeholder="Enter API key..."
-                                        autocomplete="off"
-                                        class="provider-key-input"
-                                    />
-                                    <button
-                                        id="provider-activate"
-                                        class="provider-activate-btn"
-                                    >
-                                        Save & Activate
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div
-                                id="auth-section"
-                                class="gateway-key-section"
-                                style="display: none"
-                            >
-                                <hr class="divider" />
-                                <label for="key-gateway">Gateway API Key</label>
-                                <input
-                                    id="key-gateway"
-                                    type="password"
-                                    placeholder="Enter your gateway key"
-                                    autocomplete="off"
-                                />
-                                <p class="hint">
-                                    This gateway requires authentication.
-                                </p>
-                                <button id="auth-connect">Connect</button>
-                            </div>
-
-                            <div class="actions">
-                                <button id="refresh">Refresh Status</button>
-                            </div>
-                        </div>
-                    </aside>
-                </div>
+      <div class="workspace">
+        <section class="panel panel-view" id="view-chat">
+          <div class="chat-top">
+            <div class="chat-meta">
+              <span>Chat</span>
+              <span>Enter sends, Shift+Enter newline</span>
             </div>
-        </main>
-        <script
-            type="module"
-            src="/assets/webchat/main.js?v=oauth-rules-4"
-        ></script>
-    </body>
+            <div class="actions">
+              <button id="reconnect">Reconnect</button>
+              <button id="clear">New Chat</button>
+            </div>
+          </div>
+
+          <div id="chat" class="chat">
+            <div id="nano-agents" class="nano-agents" aria-live="polite">
+              <div class="nano-bg" id="nano-bg"></div>
+              <div class="nano-grid" id="nano-grid"></div>
+              <div class="nano-text">
+                <span class="nano-label">Typing...</span>
+                <span id="nano-time" class="nano-time">0s</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="controls">
+            <div class="composer">
+              <textarea id="input" placeholder="Type a message..."></textarea>
+              <button id="send" class="primary">Send</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- MCPs View — populated from GET /api/mcp -->
+        <section class="panel panel-view" id="view-mcps" style="display: none;">
+          <div class="settings-header">
+            <h2>MCPs</h2>
+          </div>
+          <div class="settings-body" id="mcps-list">
+            <p style="color:var(--text-secondary)">Loading...</p>
+          </div>
+        </section>
+
+        <!-- Structural Mockup for Integrations View -->
+        <section class="panel panel-view" id="view-integrations" style="display: none;">
+          <div class="settings-header">
+            <h2>Integrations</h2>
+          </div>
+          <div class="settings-body" id="integrations-list">
+            <div class="card integration-card">
+              <div class="card-header">
+                <div class="integration-brand">
+                  <img class="integration-logo" src="/assets/googlenormal.svg" alt="Google logo">
+                  <h3 class="card-title">Google OAuth</h3>
+                </div>
+                <span class="pill offline" id="google-integration-status">Not connected</span>
+              </div>
+              <div class="card-meta" id="google-integration-meta">Connect your Google Workspace account.</div>
+              <div class="integration-config" id="google-integration-config" style="display: none;">
+                <label for="google-client-id-input">Google Client ID</label>
+                <input id="google-client-id-input" type="text" autocomplete="off"
+                  placeholder="Paste OAuth client ID">
+                <label for="google-client-secret-input">Google Client Secret</label>
+                <input id="google-client-secret-input" type="password" autocomplete="off"
+                  placeholder="Paste OAuth client secret">
+                <label for="google-redirect-uri-input">Redirect URI (optional)</label>
+                <input id="google-redirect-uri-input" type="text" autocomplete="off"
+                  placeholder="http://127.0.0.1:3000/api/integrations/google/callback">
+                <button id="google-integration-save">Save OAuth Config</button>
+                <div id="google-integration-feedback" class="integration-feedback" aria-live="polite"></div>
+                <div id="google-vault-status" class="integration-note" aria-live="polite"></div>
+              </div>
+              <div class="card-actions">
+                <button id="google-config-toggle">Configure</button>
+                <button class="primary" id="google-integration-toggle">Connect</button>
+              </div>
+            </div>
+
+            <div class="card integration-card is-placeholder">
+              <div class="card-header">
+                <div class="integration-brand">
+                  <h3 class="card-title">Slack</h3>
+                </div>
+                <span class="pill offline">Coming Soon</span>
+              </div>
+              <div class="card-meta">Connect your agent to Slack channels for real-time collaboration and team intelligence.</div>
+            </div>
+
+            <div class="card integration-card is-placeholder">
+              <div class="card-header">
+                <div class="integration-brand">
+                  <h3 class="card-title">Discord</h3>
+                </div>
+                <span class="pill offline">Coming Soon</span>
+              </div>
+              <div class="card-meta">Enable your agent to interact within Discord servers, manage roles, and answer community questions.</div>
+            </div>
+
+            <div class="card integration-card is-placeholder">
+              <div class="card-header">
+                <div class="integration-brand">
+                  <h3 class="card-title">Telegram</h3>
+                </div>
+                <span class="pill offline">Coming Soon</span>
+              </div>
+              <div class="card-meta">Communicate with your agent on the go via Telegram for seamless mobile integration.</div>
+            </div>
+          </div>
+        </section>
+        <aside class="panel">
+          <div class="panel-head">
+            <img class="panel-art" src="/assets/UI%20Crab.png" alt="OpenCrust UI crab">
+            <h2>System Status</h2>
+          </div>
+          <div class="sidebar-body">
+            <div class="status-group">
+              <h3>Gateway</h3>
+              <div class="status-row">
+                <span>Server</span>
+                <code id="api-status">checking...</code>
+              </div>
+              <div class="status-row">
+                <span>Session</span>
+                <code id="session">none</code>
+              </div>
+              <div class="status-row">
+                <span>Active sessions</span>
+                <code id="session-count">-</code>
+              </div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="status-group">
+              <h3>Channels</h3>
+              <div id="channel-list" class="channel-list">
+                <span class="no-channels">No channels connected</span>
+              </div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="status-group">
+              <h3>LLM Provider</h3>
+              <select id="provider-select" class="provider-select">
+                <option value="">Loading...</option>
+              </select>
+              <div id="provider-status" class="provider-status"></div>
+              <label for="provider-model-input" class="provider-model-label">Model (optional)</label>
+              <input id="provider-model-input" class="provider-model-input" list="provider-model-options"
+                placeholder="Provider default model" autocomplete="off">
+              <datalist id="provider-model-options"></datalist>
+              <div id="provider-model-status" class="provider-model-status"></div>
+              <label for="provider-base-url-input" class="provider-base-url-label">Base URL (optional)</label>
+              <input id="provider-base-url-input" class="provider-base-url-input"
+                placeholder="https://api.example.com" autocomplete="off">
+              <div id="provider-key-section" style="display:none">
+                <input id="provider-api-key" type="password" placeholder="Enter API key..." autocomplete="off"
+                  class="provider-key-input">
+                <button id="provider-activate" class="provider-activate-btn">Save & Activate</button>
+              </div>
+            </div>
+
+            <div id="auth-section" class="gateway-key-section" style="display:none">
+              <hr class="divider">
+              <label for="key-gateway">Gateway API Key</label>
+              <input id="key-gateway" type="password" placeholder="Enter your gateway key" autocomplete="off">
+              <p class="hint">This gateway requires authentication.</p>
+              <button id="auth-connect">Connect</button>
+            </div>
+
+            <div class="actions">
+              <button id="refresh">Refresh Status</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="/assets/webchat/main.js?v=oauth-rules-4"></script>
+</body>
+
 </html>
