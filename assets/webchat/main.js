@@ -644,7 +644,13 @@ providerActivateBtn.addEventListener("click", async () => {
     const payload = { provider_type: id, api_key: key, set_default: true };
     if (model) payload.model = model;
     const baseUrl = providerBaseUrlInput.value.trim();
-    if (baseUrl) payload.base_url = baseUrl;
+    if (baseUrl) {
+      if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+        providerStatus.textContent = "Base URL must start with http:// or https://";
+        return;
+      }
+      payload.base_url = baseUrl;
+    }
     const r = await fetch("/api/providers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

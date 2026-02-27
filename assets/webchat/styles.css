@@ -522,6 +522,31 @@ body.ready {
   min-height: 1.1em;
 }
 
+.provider-base-url-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.provider-base-url-input {
+  width: 100%;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--panel);
+  padding: 8px 10px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.82rem;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.provider-base-url-input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(127, 90, 49, 0.2);
+}
+
 .provider-key-input {
   width: 100%;
   border: 1px solid var(--panel-edge);
@@ -897,6 +922,7 @@ button,
 .gateway-key-section input,
 .provider-select,
 .provider-model-input,
+.provider-base-url-input,
 .provider-key-input,
 textarea,
 .channel-tag,
@@ -980,6 +1006,7 @@ textarea,
   .gateway-key-section input,
   .provider-select,
   .provider-model-input,
+  .provider-base-url-input,
   .provider-key-input,
   textarea,
   .channel-tag,

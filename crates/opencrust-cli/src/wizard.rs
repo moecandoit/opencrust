@@ -15,8 +15,11 @@ use tracing::info;
 #[derive(Default, Debug)]
 struct DetectedKeys {
     anthropic_api_key: Option<String>,
+    anthropic_base_url: Option<String>,
     openai_api_key: Option<String>,
+    openai_base_url: Option<String>,
     sansa_api_key: Option<String>,
+    sansa_base_url: Option<String>,
     telegram_bot_token: Option<String>,
     discord_bot_token: Option<String>,
     discord_app_id: Option<String>,
@@ -61,14 +64,27 @@ impl DetectedKeys {
             _ => None,
         }
     }
+
+    /// Return the base URL for the given provider, if set in environment.
+    fn base_url_for_provider(&self, provider: &str) -> Option<&str> {
+        match provider {
+            "anthropic" => self.anthropic_base_url.as_deref(),
+            "openai" => self.openai_base_url.as_deref(),
+            "sansa" => self.sansa_base_url.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 fn detect_env_keys() -> DetectedKeys {
     let get = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     DetectedKeys {
         anthropic_api_key: get("ANTHROPIC_API_KEY"),
+        anthropic_base_url: get("ANTHROPIC_BASE_URL"),
         openai_api_key: get("OPENAI_API_KEY"),
+        openai_base_url: get("OPENAI_BASE_URL"),
         sansa_api_key: get("SANSA_API_KEY"),
+        sansa_base_url: get("SANSA_BASE_URL"),
         telegram_bot_token: get("TELEGRAM_BOT_TOKEN"),
         discord_bot_token: get("DISCORD_BOT_TOKEN"),
         discord_app_id: get("DISCORD_APP_ID"),
@@ -297,11 +313,20 @@ async fn section_provider(
         if detected.anthropic_api_key.is_some() {
             println!("    Found ANTHROPIC_API_KEY");
         }
+        if detected.anthropic_base_url.is_some() {
+            println!("    Found ANTHROPIC_BASE_URL");
+        }
         if detected.openai_api_key.is_some() {
             println!("    Found OPENAI_API_KEY");
         }
+        if detected.openai_base_url.is_some() {
+            println!("    Found OPENAI_BASE_URL");
+        }
         if detected.sansa_api_key.is_some() {
             println!("    Found SANSA_API_KEY");
+        }
+        if detected.sansa_base_url.is_some() {
+            println!("    Found SANSA_BASE_URL");
         }
         println!();
 
@@ -316,16 +341,22 @@ async fn section_provider(
         if sel == 0 {
             let provider = detected.best_provider().unwrap(); // safe - has_any_llm was true
             let key = detected.key_for_provider(provider).unwrap();
+            let base_url = detected.base_url_for_provider(provider);
+
+            // Show custom base URL if detected
+            if let Some(url) = base_url {
+                println!("  Using custom base URL: {}", url);
+            }
 
             // Validate
             print!("  Testing {provider} connection... ");
-            match validate_llm_key(provider, key, None).await {
+            match validate_llm_key(provider, key, base_url).await {
                 Ok(true) => {
                     println!("connected");
                     return Ok(Some(ProviderResult {
                         provider: provider.to_string(),
                         api_key: key.to_string(),
-                        base_url: None,
+                        base_url: base_url.map(|s| s.to_string()),
                         from_env: true,
                         verified: true,
                     }));
@@ -396,7 +427,11 @@ async fn section_provider(
 
     // API key entry with retry loop
     loop {
-        let key_prompt = format!("{provider} API key (or set {env_hint} env var later)");
+        let key_prompt = if existing_has_key {
+            format!("{provider} API key (Enter to keep existing, or set {env_hint} env var later)")
+        } else {
+            format!("{provider} API key (or set {env_hint} env var later)")
+        };
 
         let api_key: String = Password::new()
             .with_prompt(&key_prompt)
@@ -436,7 +471,7 @@ async fn section_provider(
 
         // Validate the key
         print!("  Testing {provider} connection... ");
-        match validate_llm_key(provider, &api_key, None).await {
+        match validate_llm_key(provider, &api_key, base_url.as_deref()).await {
             Ok(true) => {
                 println!("connected");
                 return Ok(Some(ProviderResult {
