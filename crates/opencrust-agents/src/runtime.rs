@@ -9,8 +9,8 @@ use tracing::{info, instrument, warn};
 
 use crate::embeddings::EmbeddingProvider;
 use crate::providers::{
-    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, MessagePart, StreamEvent,
-    ToolDefinition,
+    ChatMessage, ChatRole, ContentBlock, LlmProvider, LlmRequest, LlmResponse, MessagePart,
+    StreamEvent, ToolDefinition,
 };
 use crate::tools::{Tool, ToolContext, ToolOutput};
 
@@ -21,6 +21,7 @@ const MAX_TOOL_ITERATIONS: usize = 10;
 pub struct AgentRuntime {
     providers: RwLock<Vec<Arc<dyn LlmProvider>>>,
     default_provider: RwLock<Option<String>>,
+    fallback_provider_ids: RwLock<Vec<String>>,
     memory: Option<Arc<dyn MemoryProvider>>,
     embeddings: Option<Arc<dyn EmbeddingProvider>>,
     tools: Vec<Box<dyn Tool>>,
@@ -37,6 +38,7 @@ impl AgentRuntime {
         Self {
             providers: RwLock::new(Vec::new()),
             default_provider: RwLock::new(None),
+            fallback_provider_ids: RwLock::new(Vec::new()),
             memory: None,
             embeddings: None,
             tools: Vec::new(),
@@ -137,6 +139,109 @@ impl AgentRuntime {
     /// Return the current default provider ID.
     pub fn default_provider_id(&self) -> Option<String> {
         self.default_provider.read().unwrap().clone()
+    }
+
+    /// Set the fallback provider chain (used when primary provider fails).
+    pub fn set_fallback_provider_ids(&self, ids: &[String]) {
+        let mut deduped = Vec::new();
+        for id in ids {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !deduped.iter().any(|existing: &String| existing == trimmed) {
+                deduped.push(trimmed.to_string());
+            }
+        }
+        *self.fallback_provider_ids.write().unwrap() = deduped;
+    }
+
+    /// Return the configured fallback provider IDs.
+    pub fn fallback_provider_ids(&self) -> Vec<String> {
+        self.fallback_provider_ids.read().unwrap().clone()
+    }
+
+    fn default_provider_chain(&self) -> Result<Vec<Arc<dyn LlmProvider>>> {
+        let default_id = self
+            .default_provider_id()
+            .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
+
+        let primary = self
+            .get_provider(&default_id)
+            .ok_or_else(|| Error::Agent(format!("default provider '{default_id}' not found")))?;
+
+        let mut providers = vec![primary];
+        for fallback_id in self.fallback_provider_ids() {
+            if fallback_id == default_id {
+                continue;
+            }
+            if providers.iter().any(|p| p.provider_id() == fallback_id) {
+                continue;
+            }
+            if let Some(provider) = self.get_provider(&fallback_id) {
+                providers.push(provider);
+            } else {
+                warn!(
+                    "configured fallback provider '{}' is not registered; skipping",
+                    fallback_id
+                );
+            }
+        }
+
+        Ok(providers)
+    }
+
+    fn providers_for_request(
+        &self,
+        provider_id: Option<&str>,
+    ) -> Result<Vec<Arc<dyn LlmProvider>>> {
+        if let Some(pid) = provider_id {
+            let provider = self
+                .get_provider(pid)
+                .ok_or_else(|| Error::Agent(format!("provider '{pid}' not found")))?;
+            return Ok(vec![provider]);
+        }
+        self.default_provider_chain()
+    }
+
+    async fn complete_with_fallback(
+        &self,
+        providers: &[Arc<dyn LlmProvider>],
+        request: &LlmRequest,
+        start_index: usize,
+    ) -> Result<(LlmResponse, usize)> {
+        if providers.is_empty() {
+            return Err(Error::Agent("no LLM provider configured".into()));
+        }
+
+        let mut index = start_index.min(providers.len() - 1);
+        loop {
+            let provider = &providers[index];
+            let provider_id = provider.provider_id().to_string();
+            match provider.complete(request).await {
+                Ok(response) => {
+                    if index > start_index {
+                        info!(
+                            "using fallback provider '{}' after retryable primary failure",
+                            provider_id
+                        );
+                    }
+                    return Ok((response, index));
+                }
+                Err(err) => {
+                    if !is_retryable_provider_error(&err) || index + 1 >= providers.len() {
+                        return Err(err);
+                    }
+
+                    let next_provider = providers[index + 1].provider_id();
+                    warn!(
+                        "provider '{}' failed with retryable error ({}); trying fallback '{}'",
+                        provider_id, err, next_provider
+                    );
+                    index += 1;
+                }
+            }
+        }
     }
 
     pub fn set_memory_provider(&mut self, memory: Arc<dyn MemoryProvider>) {
@@ -473,13 +578,8 @@ impl AgentRuntime {
         system_prompt_override: Option<&str>,
         max_tokens_override: Option<u32>,
     ) -> Result<String> {
-        let provider: Arc<dyn LlmProvider> = if let Some(pid) = provider_id {
-            self.get_provider(pid)
-                .ok_or_else(|| Error::Agent(format!("provider '{pid}' not found")))?
-        } else {
-            self.default_provider()
-                .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?
-        };
+        let providers = self.providers_for_request(provider_id)?;
+        let mut active_provider_idx = 0usize;
 
         let effective_system_prompt = system_prompt_override
             .map(|s| s.to_string())
@@ -543,7 +643,10 @@ impl AgentRuntime {
                 tools: tool_defs.clone(),
             };
 
-            let response = provider.complete(&request).await?;
+            let (response, used_provider_idx) = self
+                .complete_with_fallback(&providers, &request, active_provider_idx)
+                .await?;
+            active_provider_idx = used_provider_idx;
 
             let has_tool_use = response
                 .content
@@ -615,13 +718,8 @@ impl AgentRuntime {
         max_tokens_override: Option<u32>,
         session_summary: Option<&str>,
     ) -> Result<(String, Option<String>)> {
-        let provider: Arc<dyn LlmProvider> = if let Some(pid) = provider_id {
-            self.get_provider(pid)
-                .ok_or_else(|| Error::Agent(format!("provider '{pid}' not found")))?
-        } else {
-            self.default_provider()
-                .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?
-        };
+        let providers = self.providers_for_request(provider_id)?;
+        let mut active_provider_idx = 0usize;
 
         let effective_system_prompt = system_prompt_override
             .map(|s| s.to_string())
@@ -678,7 +776,7 @@ impl AgentRuntime {
             &system,
             &tool_defs,
             max_ctx,
-            provider.as_ref(),
+            providers[active_provider_idx].as_ref(),
             session_summary,
             self.summarization_enabled,
         )
@@ -705,7 +803,10 @@ impl AgentRuntime {
                 tools: tool_defs.clone(),
             };
 
-            let response = provider.complete(&request).await?;
+            let (response, used_provider_idx) = self
+                .complete_with_fallback(&providers, &request, active_provider_idx)
+                .await?;
+            active_provider_idx = used_provider_idx;
 
             let has_tool_use = response
                 .content
@@ -774,9 +875,8 @@ impl AgentRuntime {
         user_id: Option<&str>,
         heartbeat_depth: u8,
     ) -> Result<String> {
-        let provider: Arc<dyn LlmProvider> = self
-            .default_provider()
-            .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
+        let providers = self.default_provider_chain()?;
+        let mut active_provider_idx = 0usize;
 
         // Build system message: system_prompt + memory context
         let memory_context = match self
@@ -832,7 +932,10 @@ impl AgentRuntime {
                 tools: tool_defs.clone(),
             };
 
-            let response = provider.complete(&request).await?;
+            let (response, used_provider_idx) = self
+                .complete_with_fallback(&providers, &request, active_provider_idx)
+                .await?;
+            active_provider_idx = used_provider_idx;
 
             let has_tool_use = response
                 .content
@@ -979,9 +1082,8 @@ impl AgentRuntime {
         continuity_key: Option<&str>,
         user_id: Option<&str>,
     ) -> Result<String> {
-        let provider: Arc<dyn LlmProvider> = self
-            .default_provider()
-            .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
+        let providers = self.default_provider_chain()?;
+        let mut active_provider_idx = 0usize;
 
         // Build system message (same as process_message)
         let memory_context = match self
@@ -1039,6 +1141,7 @@ impl AgentRuntime {
             };
 
             // Try streaming; fall back to non-streaming if not supported
+            let provider = &providers[active_provider_idx];
             let stream_result = provider.stream_complete(&request).await;
 
             match stream_result {
@@ -1154,9 +1257,16 @@ impl AgentRuntime {
                         let _ = delta_tx.send("\n\n".to_string()).await;
                     }
                 }
-                Err(_) => {
-                    // Streaming not supported — fall back to non-streaming
-                    let response = provider.complete(&request).await?;
+                Err(stream_err) => {
+                    warn!(
+                        "streaming failed for provider '{}', falling back to non-streaming: {}",
+                        provider.provider_id(),
+                        stream_err
+                    );
+                    let (response, used_provider_idx) = self
+                        .complete_with_fallback(&providers, &request, active_provider_idx)
+                        .await?;
+                    active_provider_idx = used_provider_idx;
 
                     let has_tool_use = response
                         .content
@@ -1239,9 +1349,8 @@ impl AgentRuntime {
         user_id: Option<&str>,
         heartbeat_depth: u8,
     ) -> Result<(String, Option<String>)> {
-        let provider: Arc<dyn LlmProvider> = self
-            .default_provider()
-            .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
+        let providers = self.default_provider_chain()?;
+        let mut active_provider_idx = 0usize;
 
         let memory_context = match self
             .recall_context(
@@ -1288,7 +1397,7 @@ impl AgentRuntime {
             &system,
             &tool_defs,
             max_ctx,
-            provider.as_ref(),
+            providers[active_provider_idx].as_ref(),
             session_summary,
             self.summarization_enabled,
         )
@@ -1316,7 +1425,10 @@ impl AgentRuntime {
                 tools: tool_defs.clone(),
             };
 
-            let response = provider.complete(&request).await?;
+            let (response, used_provider_idx) = self
+                .complete_with_fallback(&providers, &request, active_provider_idx)
+                .await?;
+            active_provider_idx = used_provider_idx;
 
             let has_tool_use = response
                 .content
@@ -1395,9 +1507,8 @@ impl AgentRuntime {
         continuity_key: Option<&str>,
         user_id: Option<&str>,
     ) -> Result<(String, Option<String>)> {
-        let provider: Arc<dyn LlmProvider> = self
-            .default_provider()
-            .ok_or_else(|| Error::Agent("no LLM provider configured".into()))?;
+        let providers = self.default_provider_chain()?;
+        let mut active_provider_idx = 0usize;
 
         let memory_context = match self
             .recall_context(
@@ -1444,7 +1555,7 @@ impl AgentRuntime {
             &system,
             &tool_defs,
             max_ctx,
-            provider.as_ref(),
+            providers[active_provider_idx].as_ref(),
             session_summary,
             self.summarization_enabled,
         )
@@ -1473,6 +1584,7 @@ impl AgentRuntime {
                 tools: tool_defs.clone(),
             };
 
+            let provider = &providers[active_provider_idx];
             let stream_result = provider.stream_complete(&request).await;
 
             match stream_result {
@@ -1584,8 +1696,16 @@ impl AgentRuntime {
                         let _ = delta_tx.send("\n\n".to_string()).await;
                     }
                 }
-                Err(_) => {
-                    let response = provider.complete(&request).await?;
+                Err(stream_err) => {
+                    warn!(
+                        "streaming failed for provider '{}', falling back to non-streaming: {}",
+                        provider.provider_id(),
+                        stream_err
+                    );
+                    let (response, used_provider_idx) = self
+                        .complete_with_fallback(&providers, &request, active_provider_idx)
+                        .await?;
+                    active_provider_idx = used_provider_idx;
 
                     let has_tool_use = response
                         .content
@@ -1881,6 +2001,53 @@ async fn compact_messages(
     }
 }
 
+fn is_retryable_provider_error(error: &Error) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+
+    if let Some(status) = extract_status_code(&message) {
+        return matches!(status, 429 | 500 | 502 | 503);
+    }
+
+    let retryable_fragments = [
+        "timed out",
+        "timeout",
+        "connection refused",
+        "connection reset",
+        "connection aborted",
+        "temporarily unavailable",
+        "dns error",
+        "network error",
+    ];
+
+    retryable_fragments
+        .iter()
+        .any(|fragment| message.contains(fragment))
+}
+
+fn extract_status_code(message: &str) -> Option<u16> {
+    for marker in ["status=", "status:", "status code"] {
+        let mut search_start = 0usize;
+        while let Some(offset) = message[search_start..].find(marker) {
+            let marker_start = search_start + offset;
+            let after_marker = marker_start + marker.len();
+            let remainder = message[after_marker..].trim_start();
+            let digits: String = remainder
+                .chars()
+                .take_while(|ch| ch.is_ascii_digit())
+                .collect();
+
+            if digits.len() >= 3
+                && let Ok(status) = digits[..3].parse::<u16>()
+            {
+                return Some(status);
+            }
+
+            search_start = after_marker;
+        }
+    }
+    None
+}
+
 /// The bootstrap instruction injected when no dna.md exists yet.
 /// The agent will ask the user a few questions and write dna.md itself.
 /// Build the bootstrap instruction with the resolved config directory path.
@@ -1950,11 +2117,46 @@ fn extract_text(content: &[ContentBlock]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn make_msg(role: ChatRole, text: &str) -> ChatMessage {
         ChatMessage {
             role,
             content: MessagePart::Text(text.to_string()),
+        }
+    }
+
+    struct StaticMockProvider {
+        id: &'static str,
+        fail_with: Option<&'static str>,
+        output: &'static str,
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmProvider for StaticMockProvider {
+        fn provider_id(&self) -> &str {
+            self.id
+        }
+
+        async fn complete(&self, _request: &LlmRequest) -> Result<crate::providers::LlmResponse> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(message) = self.fail_with {
+                return Err(Error::Agent(message.to_string()));
+            }
+
+            Ok(crate::providers::LlmResponse {
+                content: vec![ContentBlock::Text {
+                    text: self.output.to_string(),
+                }],
+                model: self.id.to_string(),
+                usage: None,
+                stop_reason: Some("stop".to_string()),
+            })
+        }
+
+        async fn health_check(&self) -> Result<bool> {
+            Ok(true)
         }
     }
 
@@ -2177,6 +2379,128 @@ mod tests {
         assert!(result.unwrap().contains("Summary: user asked about Rust."));
         // Old messages should have been drained
         assert!(messages.len() < 3);
+    }
+
+    #[test]
+    fn retryable_error_classifier_matches_expected_cases() {
+        assert!(is_retryable_provider_error(&Error::Agent(
+            "openai API error: status=429, body=rate limit".to_string()
+        )));
+        assert!(is_retryable_provider_error(&Error::Agent(
+            "anthropic API error: status: 503 body=unavailable".to_string()
+        )));
+        assert!(is_retryable_provider_error(&Error::Agent(
+            "request failed: operation timed out".to_string()
+        )));
+        assert!(!is_retryable_provider_error(&Error::Agent(
+            "openai API error: status=401, body=bad key".to_string()
+        )));
+        assert!(!is_retryable_provider_error(&Error::Agent(
+            "openai API error: status=400, body=bad request".to_string()
+        )));
+    }
+
+    #[tokio::test]
+    async fn process_message_uses_fallback_provider_on_retryable_error() {
+        let runtime = AgentRuntime::new();
+
+        let primary_calls = Arc::new(AtomicUsize::new(0));
+        let fallback_calls = Arc::new(AtomicUsize::new(0));
+
+        runtime.register_provider(Arc::new(StaticMockProvider {
+            id: "primary",
+            fail_with: Some("openai API error: status=500, body=internal error"),
+            output: "",
+            calls: Arc::clone(&primary_calls),
+        }));
+        runtime.register_provider(Arc::new(StaticMockProvider {
+            id: "backup",
+            fail_with: None,
+            output: "fallback answer",
+            calls: Arc::clone(&fallback_calls),
+        }));
+        assert!(runtime.set_default_provider_id("primary"));
+        runtime.set_fallback_provider_ids(&["backup".to_string()]);
+
+        let response = runtime
+            .process_message("session-1", "hello", &[])
+            .await
+            .expect("fallback should succeed");
+
+        assert_eq!(response, "fallback answer");
+        assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn process_message_does_not_fallback_on_non_retryable_error() {
+        let runtime = AgentRuntime::new();
+
+        let primary_calls = Arc::new(AtomicUsize::new(0));
+        let fallback_calls = Arc::new(AtomicUsize::new(0));
+
+        runtime.register_provider(Arc::new(StaticMockProvider {
+            id: "primary",
+            fail_with: Some("openai API error: status=401, body=bad key"),
+            output: "",
+            calls: Arc::clone(&primary_calls),
+        }));
+        runtime.register_provider(Arc::new(StaticMockProvider {
+            id: "backup",
+            fail_with: None,
+            output: "fallback answer",
+            calls: Arc::clone(&fallback_calls),
+        }));
+        assert!(runtime.set_default_provider_id("primary"));
+        runtime.set_fallback_provider_ids(&["backup".to_string()]);
+
+        let err = runtime
+            .process_message("session-1", "hello", &[])
+            .await
+            .expect_err("non-retryable errors should fail immediately");
+
+        assert!(
+            err.to_string().contains("status=401"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn process_message_returns_last_error_when_all_providers_fail() {
+        let runtime = AgentRuntime::new();
+
+        let primary_calls = Arc::new(AtomicUsize::new(0));
+        let fallback_calls = Arc::new(AtomicUsize::new(0));
+
+        runtime.register_provider(Arc::new(StaticMockProvider {
+            id: "primary",
+            fail_with: Some("openai API error: status=500, body=internal error"),
+            output: "",
+            calls: Arc::clone(&primary_calls),
+        }));
+        runtime.register_provider(Arc::new(StaticMockProvider {
+            id: "backup",
+            fail_with: Some("anthropic API error: status=503, body=overloaded"),
+            output: "",
+            calls: Arc::clone(&fallback_calls),
+        }));
+        assert!(runtime.set_default_provider_id("primary"));
+        runtime.set_fallback_provider_ids(&["backup".to_string()]);
+
+        let err = runtime
+            .process_message("session-1", "hello", &[])
+            .await
+            .expect_err("should fail when all providers are exhausted");
+
+        // The last provider's error should be returned
+        assert!(
+            err.to_string().contains("status=503"),
+            "expected last provider error, got: {err}"
+        );
+        assert_eq!(primary_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(fallback_calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]

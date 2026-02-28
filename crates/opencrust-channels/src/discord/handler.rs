@@ -146,6 +146,7 @@ impl DiscordHandler {
         command: &CommandInteraction,
         slash: commands::DiscordSlashCommand,
     ) {
+        // Defer immediately — Discord requires a response within 3 seconds.
         if let Err(e) = command.defer(&ctx.http).await {
             warn!("failed to defer slash command response: {e}");
             return;
@@ -159,15 +160,66 @@ impl DiscordHandler {
             .unwrap_or_else(|| command.user.name.clone());
         let text = format!("/{}", slash.as_str());
 
+        // Stream the LLM response via delta channel, progressively editing the
+        // deferred interaction response so the user sees incremental output.
+        let (delta_tx, mut delta_rx) = mpsc::channel::<String>(64);
         let on_message = Arc::clone(&self.on_message);
-        let result = on_message(
-            command.channel_id.to_string(),
-            user_id,
-            user_name,
-            text,
-            None,
-        )
-        .await;
+        let cb_channel_id = command.channel_id.to_string();
+        let cb_user_id = user_id.clone();
+        let cb_user_name = user_name.clone();
+        let cb_text = text.clone();
+
+        let callback_handle = tokio::spawn(async move {
+            on_message(
+                cb_channel_id,
+                cb_user_id,
+                cb_user_name,
+                cb_text,
+                Some(delta_tx),
+            )
+            .await
+        });
+
+        // Accumulate streaming deltas and periodically edit the deferred response.
+        let mut accumulated = String::new();
+        let mut first_delta_at: Option<Instant> = None;
+        let mut last_update = Instant::now();
+
+        while let Some(delta) = delta_rx.recv().await {
+            accumulated.push_str(&delta);
+            if first_delta_at.is_none() {
+                first_delta_at = Some(Instant::now());
+            }
+
+            // Buffer for 1s before first edit, then update every 1s
+            if first_delta_at
+                .map(|t| t.elapsed() >= Duration::from_secs(1))
+                .unwrap_or(false)
+                && last_update.elapsed() >= Duration::from_millis(1000)
+            {
+                let formatted = convert::to_discord_markdown(&accumulated);
+                let chunks = convert::split_discord_chunks(&formatted);
+                let mut display = chunks.first().cloned().unwrap_or_default();
+                if chunks.len() > 1 {
+                    // Truncate with indicator so the user knows more content is coming
+                    let suffix = "\n\n...";
+                    display.truncate(convert::DISCORD_MESSAGE_CHAR_LIMIT - suffix.len());
+                    display.push_str(suffix);
+                }
+                let _ = command
+                    .edit_response(
+                        &ctx.http,
+                        serenity_model::EditInteractionResponse::new().content(display),
+                    )
+                    .await;
+                last_update = Instant::now();
+            }
+        }
+
+        // Get final result from callback
+        let result = callback_handle
+            .await
+            .unwrap_or_else(|e| Err(format!("task panic: {e}")));
 
         let response_text = match result {
             Ok(t) => t,
@@ -175,6 +227,7 @@ impl DiscordHandler {
             Err(e) => format!("Sorry, an error occurred: {e}"),
         };
 
+        // Final edit with complete, formatted response
         let response_text = convert::to_discord_markdown(&response_text);
         let chunks = convert::split_discord_chunks(&response_text);
         let first_chunk = chunks
@@ -193,6 +246,7 @@ impl DiscordHandler {
             return;
         }
 
+        // Send overflow chunks as followup messages
         if chunks.len() > 1 {
             for chunk in chunks.into_iter().skip(1) {
                 if let Err(e) = command
@@ -297,12 +351,60 @@ impl EventHandler for DiscordHandler {
     }
 
     /// Fired when a thread is created.
-    async fn thread_create(&self, _ctx: Context, thread: serenity_model::GuildChannel) {
+    ///
+    /// The bot auto-joins new threads so it can receive messages within them,
+    /// enabling per-thread session history.
+    async fn thread_create(&self, ctx: Context, thread: serenity_model::GuildChannel) {
         info!(
             thread_id = %thread.id,
             thread_name = %thread.name,
-            "new discord thread created"
+            "new discord thread created — auto-joining"
         );
+
+        // Auto-join the thread so the bot receives messages in it
+        if let Err(e) = thread.id.join_thread(&ctx.http).await {
+            warn!(
+                thread_id = %thread.id,
+                "failed to auto-join discord thread: {e}"
+            );
+        }
+    }
+
+    /// Fired when a thread is updated (e.g. unarchived).
+    ///
+    /// Re-joins threads that become active again so the bot continues
+    /// receiving messages and maintaining per-thread session history.
+    async fn thread_update(
+        &self,
+        ctx: Context,
+        old: Option<serenity_model::GuildChannel>,
+        new: serenity_model::GuildChannel,
+    ) {
+        // Only act when the thread transitions from archived to active
+        let was_archived = old
+            .as_ref()
+            .and_then(|o| o.thread_metadata.as_ref())
+            .map(|m| m.archived)
+            .unwrap_or(true);
+        let is_archived = new
+            .thread_metadata
+            .as_ref()
+            .map(|m| m.archived)
+            .unwrap_or(false);
+
+        if was_archived && !is_archived {
+            tracing::debug!(
+                thread_id = %new.id,
+                thread_name = %new.name,
+                "discord thread unarchived — re-joining"
+            );
+            if let Err(e) = new.id.join_thread(&ctx.http).await {
+                warn!(
+                    thread_id = %new.id,
+                    "failed to re-join discord thread: {e}"
+                );
+            }
+        }
     }
 }
 

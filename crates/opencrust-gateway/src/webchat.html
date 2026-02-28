@@ -51,7 +51,7 @@
           <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
           <line x1="12" y1="22.08" x2="12" y2="12"></line>
         </svg>
-        Integrations
+        Connections
       </div>
     </aside>
 
@@ -110,70 +110,64 @@
           </div>
         </section>
 
-        <!-- Structural Mockup for Integrations View -->
+        <!-- Connections View -->
         <section class="panel panel-view" id="view-integrations" style="display: none;">
           <div class="settings-header">
-            <h2>Integrations</h2>
+            <h2>Connections</h2>
+            <span class="settings-hint">Link services your AI can access</span>
           </div>
           <div class="settings-body" id="integrations-list">
-            <div class="card integration-card">
-              <div class="card-header">
-                <div class="integration-brand">
-                  <img class="integration-logo" src="/assets/googlenormal.svg" alt="Google logo">
-                  <h3 class="card-title">Google OAuth</h3>
-                </div>
-                <span class="pill offline" id="google-integration-status">Not connected</span>
-              </div>
-              <div class="card-meta" id="google-integration-meta">Connect your Google Workspace account.</div>
-              <div class="integration-config" id="google-integration-config" style="display: none;">
-                <label for="google-client-id-input">Google Client ID</label>
-                <input id="google-client-id-input" type="text" autocomplete="off"
-                  placeholder="Paste OAuth client ID">
-                <label for="google-client-secret-input">Google Client Secret</label>
-                <input id="google-client-secret-input" type="password" autocomplete="off"
-                  placeholder="Paste OAuth client secret">
-                <label for="google-redirect-uri-input">Redirect URI (optional)</label>
-                <input id="google-redirect-uri-input" type="text" autocomplete="off"
-                  placeholder="http://127.0.0.1:3000/api/integrations/google/callback">
-                <button id="google-integration-save">Save OAuth Config</button>
-                <div id="google-integration-feedback" class="integration-feedback" aria-live="polite"></div>
-                <div id="google-vault-status" class="integration-note" aria-live="polite"></div>
-              </div>
-              <div class="card-actions">
-                <button id="google-config-toggle">Configure</button>
-                <button class="primary" id="google-integration-toggle">Connect</button>
+
+            <div class="conn-card conn-calendar" data-service="calendar">
+              <span class="pill offline conn-status" data-status>Not connected</span>
+              <img class="conn-icon-img" src="/assets/icons/google-calendar.svg" alt="Google Calendar">
+              <h3 class="conn-title">Google Calendar</h3>
+              <p class="conn-desc">Read & create events, check availability</p>
+              <div class="conn-footer">
+                <button class="conn-configure" data-service="calendar">Configure</button>
               </div>
             </div>
 
-            <div class="card integration-card is-placeholder">
-              <div class="card-header">
-                <div class="integration-brand">
-                  <h3 class="card-title">Slack</h3>
-                </div>
-                <span class="pill offline">Coming Soon</span>
+            <div class="conn-card conn-gmail" data-service="gmail">
+              <span class="pill offline conn-status" data-status>Not connected</span>
+              <img class="conn-icon-img" src="/assets/icons/gmail.svg" alt="Gmail">
+              <h3 class="conn-title">Gmail</h3>
+              <p class="conn-desc">Read inbox, search & send emails</p>
+              <div class="conn-footer">
+                <button class="conn-configure" data-service="gmail">Configure</button>
               </div>
-              <div class="card-meta">Connect your agent to Slack channels for real-time collaboration and team intelligence.</div>
             </div>
 
-            <div class="card integration-card is-placeholder">
-              <div class="card-header">
-                <div class="integration-brand">
-                  <h3 class="card-title">Discord</h3>
-                </div>
-                <span class="pill offline">Coming Soon</span>
+            <div class="conn-card conn-drive" data-service="drive">
+              <span class="pill offline conn-status" data-status>Not connected</span>
+              <img class="conn-icon-img" src="/assets/icons/google-drive.svg" alt="Google Drive">
+              <h3 class="conn-title">Google Drive</h3>
+              <p class="conn-desc">Search & read documents and files</p>
+              <div class="conn-footer">
+                <button class="conn-configure" data-service="drive">Configure</button>
               </div>
-              <div class="card-meta">Enable your agent to interact within Discord servers, manage roles, and answer community questions.</div>
             </div>
 
-            <div class="card integration-card is-placeholder">
-              <div class="card-header">
-                <div class="integration-brand">
-                  <h3 class="card-title">Telegram</h3>
-                </div>
-                <span class="pill offline">Coming Soon</span>
+            <div class="conn-card conn-sheets" data-service="sheets">
+              <span class="pill offline conn-status" data-status>Not connected</span>
+              <img class="conn-icon-img" src="/assets/icons/google-sheets.svg" alt="Google Sheets">
+              <h3 class="conn-title">Google Sheets</h3>
+              <p class="conn-desc">Read & write spreadsheet data</p>
+              <div class="conn-footer">
+                <button class="conn-configure" data-service="sheets">Configure</button>
               </div>
-              <div class="card-meta">Communicate with your agent on the go via Telegram for seamless mobile integration.</div>
             </div>
+
+            <div class="conn-card conn-contacts" data-service="contacts">
+              <span class="pill offline conn-status" data-status>Not connected</span>
+              <img class="conn-icon-img" src="/assets/icons/google-contacts.svg" alt="Google Contacts">
+              <h3 class="conn-title">Google Contacts</h3>
+              <p class="conn-desc">Access your contact list & details</p>
+              <div class="conn-footer">
+                <button class="conn-configure" data-service="contacts">Configure</button>
+              </div>
+            </div>
+
           </div>
         </section>
         <aside class="panel">
@@ -246,6 +240,57 @@
       </div>
     </div>
   </main>
+  <!-- Integration Configuration Modal -->
+  <div class="modal-overlay" id="integration-modal" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <div class="modal-brand">
+          <img class="integration-logo" id="modal-logo" src="/assets/googlenormal.svg" alt="">
+          <h2 id="modal-title">Google OAuth</h2>
+        </div>
+        <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-form">
+          <div class="integration-config" id="google-integration-config" style="display: none;">
+            <h3>Configuration</h3>
+            <label for="google-client-id-input">Google Client ID</label>
+            <input id="google-client-id-input" type="text" autocomplete="off" placeholder="Paste OAuth client ID">
+            <label for="google-client-secret-input">Google Client Secret</label>
+            <input id="google-client-secret-input" type="password" autocomplete="off"
+              placeholder="Paste OAuth client secret">
+            <label for="google-redirect-uri-input">Redirect URI (optional)</label>
+            <input id="google-redirect-uri-input" type="text" autocomplete="off"
+              placeholder="http://127.0.0.1:3000/api/integrations/google/callback">
+            <button id="google-integration-save" class="primary">Save OAuth Config</button>
+            <div id="google-integration-feedback" class="integration-feedback" aria-live="polite"></div>
+            <div id="google-vault-status" class="integration-note" aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="modal-help">
+          <h3>Setup Guide</h3>
+          <ol>
+            <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google
+                Cloud Console → Credentials</a></li>
+            <li>Create an <strong>OAuth 2.0 Client ID</strong> (Web application)</li>
+            <li>Add your redirect URI to <em>Authorized redirect URIs</em></li>
+            <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> here</li>
+          </ol>
+          <h3>Status</h3>
+          <div class="modal-status-row">
+            <span>Connection</span>
+            <span class="pill offline" id="google-integration-status">Not connected</span>
+          </div>
+          <div class="modal-status-row" id="google-integration-meta">Connect your Google Workspace account.</div>
+          <div class="modal-actions">
+            <button id="google-config-toggle">Configure</button>
+            <button class="primary" id="google-integration-toggle">Connect</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/assets/webchat/main.js?v=oauth-rules-4"></script>
 </body>
 

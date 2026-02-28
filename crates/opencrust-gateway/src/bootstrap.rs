@@ -458,6 +458,24 @@ pub fn build_agent_runtime(config: &AppConfig) -> AgentRuntime {
     }
 
     // --- Agent Config ---
+    if let Some(default_provider) = &config.agent.default_provider
+        && !runtime.set_default_provider_id(default_provider)
+    {
+        warn!(
+            "agent.default_provider '{}' is not registered; using first available provider",
+            default_provider
+        );
+    }
+    runtime.set_fallback_provider_ids(&config.agent.fallback_providers);
+    for fallback_provider in &config.agent.fallback_providers {
+        if runtime.get_provider(fallback_provider).is_none() {
+            warn!(
+                "agent fallback provider '{}' is not registered; it will be skipped at runtime",
+                fallback_provider
+            );
+        }
+    }
+
     if let Some(prompt) = &config.agent.system_prompt {
         runtime.set_system_prompt(prompt.clone());
     }

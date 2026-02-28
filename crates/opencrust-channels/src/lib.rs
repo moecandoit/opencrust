@@ -15,6 +15,8 @@ pub mod slack;
 #[cfg(feature = "whatsapp")]
 pub mod whatsapp;
 
+#[cfg(feature = "discord")]
+pub use discord::{DiscordChannel, DiscordOnMessageFn};
 #[cfg(all(target_os = "macos", feature = "imessage"))]
 pub use imessage::{IMessageChannel, IMessageOnMessageFn};
 pub use protocol::{

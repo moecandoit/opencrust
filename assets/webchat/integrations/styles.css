@@ -67,22 +67,144 @@
   padding: 6px 10px;
 }
 
-.integration-card {
-  border-radius: 16px;
-  padding: 22px;
-  width: 100%;
-  max-width: none;
-  min-height: 0;
-  overflow: visible;
-  background:
-    radial-gradient(120% 120% at 95% 0%, rgba(173, 125, 71, 0.22), transparent 60%),
-    linear-gradient(180deg, var(--panel), var(--sand-2));
-  border: 1px solid var(--panel-edge);
-  box-shadow: 0 10px 20px rgba(45, 31, 18, 0.12);
-  justify-content: start;
-  gap: 14px;
+.settings-hint {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  font-weight: 400;
 }
 
+/* ── Connection Cards Grid ── */
+
+#integrations-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  align-content: start;
+  gap: 18px;
+}
+
+/* ── Connection Card ── */
+
+.conn-card {
+  --accent: #7f5a31;
+  position: relative;
+  border-radius: 20px;
+  padding: 28px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  cursor: default;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Accent glow orb */
+.conn-card::before {
+  content: "";
+  position: absolute;
+  top: -30%;
+  right: -20%;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent) 0%, transparent 70%);
+  opacity: 0.12;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.conn-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  border-color: var(--accent);
+}
+
+.conn-card:hover::before {
+  opacity: 0.22;
+}
+
+.conn-status {
+  align-self: center;
+  font-size: 0.68rem;
+  margin-bottom: 2px;
+}
+
+.conn-icon-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.conn-title {
+  margin: 4px 0 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.conn-desc {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  flex: 1;
+}
+
+.conn-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-edge);
+}
+
+.conn-configure {
+  font-size: 0.8rem;
+  padding: 8px 20px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-edge);
+  background: var(--sand-1);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.conn-configure:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* ── Per-service accent colors ── */
+.conn-calendar {
+  --accent: #4285f4;
+}
+
+.conn-gmail {
+  --accent: #ea4335;
+}
+
+.conn-drive {
+  --accent: #f4b400;
+}
+
+.conn-sheets {
+  --accent: #34a853;
+}
+
+.conn-contacts {
+  --accent: #00897b;
+}
+
+/* ── Legacy integration styles (kept for compatibility) ── */
 .integration-brand {
   display: flex;
   align-items: center;
@@ -95,59 +217,6 @@
   height: 24px;
   object-fit: contain;
   flex: 0 0 24px;
-}
-
-.integration-card .card-title {
-  font-size: 1.18rem;
-  letter-spacing: 0.01em;
-}
-
-.integration-card .card-meta {
-  font-family: "Archivo", "Segoe UI", sans-serif;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  padding: 12px 14px;
-  border-radius: 10px;
-  word-break: normal;
-}
-
-.integration-config {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  background: var(--panel);
-}
-
-.integration-config label {
-  font-size: 0.75rem;
-  color: var(--ink-soft);
-  font-weight: 600;
-}
-
-.integration-config input {
-  width: 100%;
-  border: 1px solid var(--panel-edge);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--panel-2);
-  padding: 7px 9px;
-  font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 0.77rem;
-}
-
-.integration-config input:focus {
-  outline: none;
-  border-color: var(--brand);
-  box-shadow: 0 0 0 2px rgba(127, 90, 49, 0.2);
-}
-
-.integration-config button {
-  margin-top: 4px;
-  justify-self: end;
-  font-size: 0.75rem;
-  padding: 6px 10px;
 }
 
 .integration-feedback {
@@ -179,64 +248,234 @@
   color: var(--error-edge);
 }
 
-.integration-diagnostics {
-  display: grid;
-  gap: 6px;
-  padding: 10px;
-  border: 1px solid var(--panel-edge);
-  border-radius: 10px;
-  background: var(--panel);
-  font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 0.72rem;
-  line-height: 1.4;
-  color: var(--ink-soft);
-}
-
-.diag-issue {
-  color: var(--error-edge);
-}
-
-.integration-card.is-placeholder {
-  opacity: 0.75;
-  filter: grayscale(0.2);
-  background: var(--panel);
-  border-style: dashed;
-  box-shadow: none;
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.integration-card.is-placeholder:hover {
-  opacity: 0.9;
-  filter: grayscale(0);
-  transform: translateY(-2px);
-  border-style: solid;
-}
-
-.integration-card.is-placeholder .card-title {
-  color: var(--ink-soft);
-}
-
-.integration-card.is-placeholder .pill {
-  background: var(--sand-1);
-  border-color: var(--panel-edge);
-}
-
-#integrations-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-content: start;
-  align-items: stretch;
-  gap: 16px;
-}
-
-@media (max-width: 1280px) {
+@media (max-width: 820px) {
   #integrations-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 520px) {
   #integrations-list {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Integration Config Modal ── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 8, 6, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.modal-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-dialog {
+  width: 90vw;
+  max-width: 720px;
+  max-height: 85vh;
+  border-radius: 20px;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: scale(0.95) translateY(8px);
+  transition: transform 0.25s ease;
+}
+
+.modal-overlay.is-open .modal-dialog {
+  transform: scale(1) translateY(0);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--panel-edge);
+  background:
+    radial-gradient(120% 120% at 95% 0%, rgba(173, 125, 71, 0.18), transparent 60%),
+    linear-gradient(180deg, var(--panel), var(--sand-2));
+}
+
+.modal-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-brand h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.modal-close {
+  background: none;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.modal-close:hover {
+  background: var(--sand-2);
+  color: var(--ink);
+  border-color: var(--ink-soft);
+}
+
+.modal-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-form {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid var(--panel-edge);
+}
+
+.modal-form h3 {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.modal-form label {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.modal-form input {
+  width: 100%;
+  border: 1px solid var(--panel-edge);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--sand-1);
+  padding: 10px 12px;
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.8rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.modal-form input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(127, 90, 49, 0.15);
+}
+
+.modal-form button.primary {
+  margin-top: 12px;
+  align-self: flex-start;
+}
+
+.modal-help {
+  padding: 24px;
+  background: var(--sand-1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal-help h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.modal-help ol {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.modal-help ol li {
+  margin-bottom: 4px;
+}
+
+.modal-help a {
+  color: var(--brand);
+  text-decoration: none;
+}
+
+.modal-help a:hover {
+  text-decoration: underline;
+}
+
+.modal-help code {
+  font-family: "IBM Plex Mono", Consolas, monospace;
+  font-size: 0.78rem;
+  background: var(--panel);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--panel-edge);
+}
+
+.modal-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--panel-edge);
+}
+
+.modal-status-row:last-child {
+  border-bottom: none;
+}
+
+/* Responsive: stack modal columns on narrow screens */
+@media (max-width: 640px) {
+  .modal-body {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-form {
+    border-right: none;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+
+  .modal-dialog {
+    max-width: 95vw;
+    max-height: 90vh;
   }
 }

@@ -184,6 +184,8 @@ impl Default for MemoryConfig {
 pub struct AgentConfig {
     pub system_prompt: Option<String>,
     pub default_provider: Option<String>,
+    #[serde(default)]
+    pub fallback_providers: Vec<String>,
     pub max_tokens: Option<u32>,
     pub max_context_tokens: Option<usize>,
 }
@@ -283,5 +285,26 @@ embeddings:
         assert_eq!(cohere.provider, "cohere");
         assert_eq!(cohere.model.as_deref(), Some("embed-english-v3.0"));
         assert_eq!(cohere.dimensions, Some(1024));
+    }
+
+    #[test]
+    fn parses_agent_fallback_providers() {
+        let raw = r#"
+gateway:
+  host: "127.0.0.1"
+  port: 3888
+agent:
+  default_provider: "main"
+  fallback_providers:
+    - "openai"
+    - "sansa"
+"#;
+
+        let config: AppConfig = serde_yaml::from_str(raw).expect("yaml should parse");
+        assert_eq!(config.agent.default_provider.as_deref(), Some("main"));
+        assert_eq!(
+            config.agent.fallback_providers,
+            vec!["openai".to_string(), "sansa".to_string()]
+        );
     }
 }
