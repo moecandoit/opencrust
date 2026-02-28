@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** Google integration endpoints (`/api/integrations/google/*`) now require authentication and return 403 if no gateway API key is configured. Set `OPENCRUST_GATEWAY_API_KEY` env var or `gateway.api_key` in config.yml to enable them.
+
 ## [0.1.19] - 2026-02-25
 
 ### Added

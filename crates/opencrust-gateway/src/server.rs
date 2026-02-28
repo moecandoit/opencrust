@@ -109,6 +109,14 @@ impl GatewayServer {
             state.mcp_manager_arc = Some(Arc::clone(arc));
         }
 
+        // Warn early if no gateway API key is set - Google integration endpoints
+        // will reject requests with 403.
+        if state.config.gateway.api_key.is_none() {
+            warn!(
+                "no gateway API key configured - Google integration endpoints will return 403. Set OPENCRUST_GATEWAY_API_KEY or gateway.api_key in config.yml"
+            );
+        }
+
         let state = Arc::new(state);
 
         // Spawn background tasks
